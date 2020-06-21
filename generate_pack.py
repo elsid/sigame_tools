@@ -125,7 +125,7 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
             if len(high_priority_samples) < high_priority_num:
                 first_selected = list(high_priority_samples)
             else:
-                first_selected = random.sample(population=high_priority_samples, k=themes_per_round)
+                first_selected = random.sample(population=high_priority_samples, k=high_priority_num)
             high_priority[round_type] = high_priority[round_type].difference(first_selected)
             selected = random.sample(population=samples, k=themes_per_round - len(first_selected))
             available[round_type] = available[round_type].difference(selected)
