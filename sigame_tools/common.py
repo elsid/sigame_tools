@@ -9,23 +9,25 @@ Index = collections.namedtuple('Index', (
     'themes',
 ))
 
-ThemeMetadata = collections.namedtuple('Theme', (
-    'id',
-    'round_number',
-    'theme_number',
-    'path',
-    'package_name',
-    'round_name',
-    'theme_name',
-    'questions_num',
-    'authors',
-    'base64_encoded_right_answers',
-    'round_type',
-    'file_name',
-    'images_num',
-    'videos_num',
-    'voices_num',
-))
+THEME_MEDATA_FIELDS = collections.OrderedDict(
+    id=str,
+    round_number=int,
+    theme_number=int,
+    path=str,
+    package_name=str,
+    round_name=str,
+    theme_name=str,
+    questions_num=int,
+    authors=[str],
+    base64_encoded_right_answers=[str],
+    round_type=str,
+    file_name=str,
+    images_num=int,
+    videos_num=int,
+    voices_num=int,
+)
+
+ThemeMetadata = collections.namedtuple('Theme', tuple(THEME_MEDATA_FIELDS.keys()))
 
 
 def get_content(siq):

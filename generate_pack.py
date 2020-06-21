@@ -7,15 +7,20 @@ import lxml.etree
 import math
 import os.path
 import random
-import re
 import urllib.parse
 import uuid
 import xml.etree.ElementTree
 import zipfile
 
 from sigame_tools.common import (
+    THEME_MEDATA_FIELDS,
     get_content,
     read_index,
+)
+
+from sigame_tools.filters import (
+    make_filter,
+    make_high_priority_filter,
 )
 
 
@@ -26,21 +31,14 @@ from sigame_tools.common import (
 @click.option('--themes_per_round', type=int, default=3, show_default=True)
 @click.option('--min_questions_per_theme', type=int, default=5, show_default=True)
 @click.option('--max_questions_per_theme', type=int, default=10, show_default=True)
-@click.option('--include_theme_by_name', type=str, multiple=True)
-@click.option('--exclude_theme_by_name', type=str, multiple=True)
-@click.option('--include_theme_by_id', type=str, multiple=True)
-@click.option('--exclude_theme_by_id', type=str, multiple=True)
-@click.option('--include_package_by_name', type=str, multiple=True)
-@click.option('--exclude_package_by_name', type=str, multiple=True)
-@click.option('--include_file_by_name', type=str, multiple=True)
-@click.option('--exclude_file_by_name', type=str, multiple=True)
+@click.option('--filter', type=str, nargs=3, multiple=True,
+              help='Triple of <force_include|include|exclude> <field> <pattern> that is used'
+                   ' to filter in or out themes applying conditions in a given order. force_include'
+                   ' will put themes into package with higher priority that include.')
 @click.option('--random_seed', type=int, default=None)
 @click.option('--package_name', type=str, default='Generated pack')
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
-         max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
-         random_seed, package_name, include_theme_by_id, exclude_theme_by_id,
-         include_package_by_name, exclude_package_by_name, include_file_by_name,
-         exclude_file_by_name):
+         max_questions_per_theme, random_seed, package_name, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
@@ -55,60 +53,22 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
             themes_per_round=themes_per_round,
             min_questions_per_theme=min_questions_per_theme,
             max_questions_per_theme=max_questions_per_theme,
-            include_theme_by_name=make_include_re(include_theme_by_name),
-            exclude_theme_by_name=make_exclude_re(exclude_theme_by_name),
-            include_theme_by_ids=frozenset(include_theme_by_id),
-            exclude_theme_by_ids=frozenset(exclude_theme_by_id),
-            include_package_by_name=make_include_re(include_package_by_name),
-            exclude_package_by_name=make_exclude_re(exclude_package_by_name),
-            include_file_by_name=make_include_re(include_file_by_name),
-            exclude_file_by_name=make_exclude_re(exclude_file_by_name),
+            filter_f=make_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
+            is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
         ),
     )
 
 
-def make_include_re(pattern):
-    return re.compile('|'.join(pattern) if pattern else '.*')
-
-
-def make_exclude_re(pattern):
-    return re.compile('|'.join(pattern)) if pattern else None
-
-
 def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
-                    max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
-                    include_theme_by_ids, exclude_theme_by_ids, include_package_by_name,
-                    exclude_package_by_name, include_file_by_name, exclude_file_by_name):
-    print(f'Include theme by name pattern: {include_theme_by_name.pattern}')
-    if exclude_theme_by_name:
-        print(f'Exclude theme by name pattern: {exclude_theme_by_name.pattern}')
-    print(f'Include package by name pattern: {include_package_by_name.pattern}')
-    if exclude_package_by_name:
-        print(f'Exclude package by name pattern: {exclude_package_by_name.pattern}')
+                    max_questions_per_theme, filter_f, is_high_priority):
     def is_proper_theme(theme):
         if theme.round_type == None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
             return False
-        if exclude_file_by_name and re.search(exclude_file_by_name, theme.file_name):
-            return False
-        if re.search(include_file_by_name, theme.file_name):
-            return True
-        if exclude_package_by_name and re.search(exclude_package_by_name, theme.package_name):
-            return False
-        if re.search(include_package_by_name, theme.package_name):
-            return True
-        if theme.id in exclude_theme_by_ids:
-            return False
-        if theme.id in include_theme_by_ids:
-            return True
-        if exclude_theme_by_name and re.search(exclude_theme_by_name, theme.theme_name):
-            return False
-        if re.search(include_theme_by_name, theme.theme_name):
-            return True
-        return False
+        return filter_f(theme)
     available, high_priority = filter_themes(
         metadata=metadata,
-        include_theme_by_ids=include_theme_by_ids,
         is_proper_theme=is_proper_theme,
+        is_high_priority=is_high_priority,
     )
     print(f'Generate rounds, filtered in {len(available[None]) + len(high_priority[None])} normal '
           + f'{len(available["final"]) + len(high_priority["final"])} final and themes and out of {len(metadata)}...')
@@ -156,12 +116,12 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
             break
 
 
-def filter_themes(metadata, include_theme_by_ids, is_proper_theme):
+def filter_themes(metadata, is_proper_theme, is_high_priority):
     available = collections.defaultdict(set)
     high_priority = collections.defaultdict(set)
     for v in metadata:
         if is_proper_theme(v):
-            if v.id in include_theme_by_ids:
+            if is_high_priority(v):
                 high_priority[v.round_type].add(v)
             else:
                 available[v.round_type].add(v)
