@@ -51,26 +51,40 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
             themes_per_round=themes_per_round,
             min_questions_per_theme=min_questions_per_theme,
             max_questions_per_theme=max_questions_per_theme,
-            include_theme_by_name=re.compile('|'.join(include_theme_by_name)) if include_theme_by_name else None,
-            exclude_theme_by_name=re.compile('|'.join(exclude_theme_by_name)) if exclude_theme_by_name else None,
+            include_theme_by_name=make_include_re(include_theme_by_name),
+            exclude_theme_by_name=make_exclude_re(exclude_theme_by_name),
             include_theme_by_ids=frozenset(include_theme_by_id),
             exclude_theme_by_ids=frozenset(exclude_theme_by_id),
         ),
     )
 
 
+def make_include_re(pattern):
+    return re.compile('|'.join(pattern) if pattern else '.*')
+
+
+def make_exclude_re(pattern):
+    return re.compile('|'.join(pattern)) if pattern else None
+
+
 def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
                     max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
                     include_theme_by_ids, exclude_theme_by_ids):
+    print(f'Include theme by name pattern: {include_theme_by_name.pattern}')
+    if exclude_theme_by_name:
+        print(f'Exclude theme by name pattern: {exclude_theme_by_name.pattern}')
     def is_proper_theme(theme):
         if theme.round_type == None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
             return False
-        if theme.id in include_theme_by_ids or theme.id not in exclude_theme_by_ids:
+        if theme.id in exclude_theme_by_ids:
+            return False
+        if theme.id in include_theme_by_ids:
             return True
-        return (
-            include_theme_by_name and re.search(include_theme_by_name, theme.theme_name)
-            or exclude_theme_by_name and not re.search(exclude_theme_by_name, theme.theme_name)
-        )
+        if exclude_theme_by_name and re.search(exclude_theme_by_name, theme.theme_name):
+            return False
+        if re.search(include_theme_by_name, theme.theme_name):
+            return True
+        return False
     available, high_priority = filter_themes(
         metadata=metadata,
         include_theme_by_ids=include_theme_by_ids,
