@@ -32,11 +32,14 @@ from sigame_tools.common import (
 @click.option('--exclude_theme_by_name', type=str, multiple=True)
 @click.option('--include_theme_by_id', type=str, multiple=True)
 @click.option('--exclude_theme_by_id', type=str, multiple=True)
+@click.option('--include_package_by_name', type=str, multiple=True)
+@click.option('--exclude_package_by_name', type=str, multiple=True)
 @click.option('--random_seed', type=int, default=None)
 @click.option('--package_name', type=str, default='Generated pack')
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
-         random_seed, package_name, include_theme_by_id, exclude_theme_by_id):
+         random_seed, package_name, include_theme_by_id, exclude_theme_by_id,
+         include_package_by_name, exclude_package_by_name):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
@@ -55,6 +58,8 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
             exclude_theme_by_name=make_exclude_re(exclude_theme_by_name),
             include_theme_by_ids=frozenset(include_theme_by_id),
             exclude_theme_by_ids=frozenset(exclude_theme_by_id),
+            include_package_by_name=make_include_re(include_package_by_name),
+            exclude_package_by_name=make_exclude_re(exclude_package_by_name),
         ),
     )
 
@@ -69,13 +74,20 @@ def make_exclude_re(pattern):
 
 def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
                     max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
-                    include_theme_by_ids, exclude_theme_by_ids):
+                    include_theme_by_ids, exclude_theme_by_ids, include_package_by_name, exclude_package_by_name):
     print(f'Include theme by name pattern: {include_theme_by_name.pattern}')
     if exclude_theme_by_name:
         print(f'Exclude theme by name pattern: {exclude_theme_by_name.pattern}')
+    print(f'Include package by name pattern: {include_package_by_name.pattern}')
+    if exclude_package_by_name:
+        print(f'Exclude package by name pattern: {exclude_package_by_name.pattern}')
     def is_proper_theme(theme):
         if theme.round_type == None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
             return False
+        if exclude_package_by_name and re.search(exclude_package_by_name, theme.package_name):
+            return False
+        if re.search(include_package_by_name, theme.package_name):
+            return True
         if theme.id in exclude_theme_by_ids:
             return False
         if theme.id in include_theme_by_ids:
