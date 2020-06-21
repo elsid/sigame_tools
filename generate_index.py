@@ -29,6 +29,9 @@ def main(output, paths):
 
 def process_files(paths):
     for path in paths:
+        if not os.path.exists(path):
+            print(f'Ignore {path}: path does not exist')
+            continue
         if os.path.isdir(path):
             print(f'Process directory {path}')
             yield from process_files((os.path.join(path, v) for v in os.listdir(path)))
