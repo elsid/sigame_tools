@@ -143,7 +143,7 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
                 questions_num = min_questions_per_theme + try_number
                 try_number += 1
                 continue
-            print(f'Sample {len(samples)} themes with {questions_num} question(s)...')
+            print(f'Sample {len(samples) + len(high_priority_samples)} themes with {questions_num} question(s)...')
             if len(high_priority_samples) < high_priority_num:
                 first_selected = list(high_priority_samples)
             else:
@@ -151,8 +151,9 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
             high_priority[round_type] = high_priority[round_type].difference(first_selected)
             selected = random.sample(population=samples, k=themes_per_round - len(first_selected))
             available[round_type] = available[round_type].difference(selected)
-            selected.extend(high_priority_samples)
-            random.shuffle(sorted(selected))
+            selected.extend(first_selected)
+            selected = sorted(selected)
+            random.shuffle(selected)
             yield Round(name=round_name, type=round_type, themes=selected)
             break
 
