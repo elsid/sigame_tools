@@ -15,7 +15,7 @@ import zipfile
 def main(output, paths):
     data = [v._asdict() for v in process_files(paths)]
     with open(output, 'w') as stream:
-        json.dump(data, stream, indent=2, ensure_ascii=False)
+        json.dump(data, stream, ensure_ascii=False)
 
 
 def process_files(paths):
@@ -35,11 +35,12 @@ def process_files(paths):
                     continue
                 yield from get_metadata(path=path, content=get_content(siq))
         except zipfile.BadZipFile as e:
-            print(f'Error: {str(e)}')
+            print(f'Read {path} error: {str(e)}')
 
 
 def get_metadata(path, content):
     package = content.getroot()
+    authors = tuple(sorted({v.text for v in package.iter('author') if v.text}))
     round_number = 0
     for round_ in package.iter('round'):
         round_number += 1
@@ -55,6 +56,7 @@ def get_metadata(path, content):
                 round_name=round_.attrib['name'],
                 theme_name=theme.attrib['name'],
                 questions_num=get_number_of_questions(theme),
+                authors=authors,
             )
 
 
@@ -67,6 +69,7 @@ Metadata = collections.namedtuple('Metadata', (
     'round_name',
     'theme_name',
     'questions_num',
+    'authors',
 ))
 
 

@@ -214,7 +214,11 @@ def get_question(content, metadata):
 def read_metadata(path):
     with open(path) as stream:
         data = json.load(stream)
-        return [Metadata(**v) for v in data]
+        return [make_metadata(**v) for v in data]
+
+
+def make_metadata(authors, **kwargs):
+    return Metadata(authors=tuple(authors), **kwargs)
 
 
 Metadata = collections.namedtuple('Metadata', (
@@ -226,6 +230,7 @@ Metadata = collections.namedtuple('Metadata', (
     'round_name',
     'theme_name',
     'questions_num',
+    'authors',
 ))
 
 
