@@ -2,7 +2,7 @@ import collections
 import defusedxml.ElementTree
 import json
 
-INDEX_VERSION=2
+INDEX_VERSION=3
 
 Index = collections.namedtuple('Index', (
     'version',
@@ -22,6 +22,9 @@ ThemeMetadata = collections.namedtuple('Theme', (
     'base64_encoded_right_answers',
     'round_type',
     'file_name',
+    'images_num',
+    'videos_num',
+    'voices_num',
 ))
 
 
@@ -45,6 +48,10 @@ def read_index(path):
         print(f'Index version {index["version"]} is too advanced: this program is designed for index version {INDEX_VERSION}')
     if index['version'] < 2:
         index['file_name'] = ''
+    if index['version'] < 3:
+        index['images_num'] = 0
+        index['video_num'] = 0
+        index['voice_num'] = 0
     return make_index(**index)
 
 
