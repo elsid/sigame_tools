@@ -2,12 +2,15 @@
 
 import base64
 import click
-import collections
-import defusedxml.ElementTree
 import json
 import os.path
 import uuid
 import zipfile
+
+from sigame_tools.common import (
+    Metadata,
+    get_content,
+)
 
 
 @click.command()
@@ -62,20 +65,6 @@ def get_metadata(path, content):
             )
 
 
-Metadata = collections.namedtuple('Metadata', (
-    'id',
-    'round_number',
-    'theme_number',
-    'path',
-    'package_name',
-    'round_name',
-    'theme_name',
-    'questions_num',
-    'authors',
-    'base64_encoded_right_answers',
-))
-
-
 def get_number_of_questions(theme):
     return sum(1 for _ in theme.iter('question'))
 
@@ -85,18 +74,6 @@ def get_base64_encoded_right_answers(theme):
         for answer in right.iter('answer'):
             if answer.text:
                 yield base64.b64encode(answer.text.encode('utf-8')).decode('utf-8')
-
-
-def get_content(siq):
-    with siq.open('content.xml') as content:
-        tree = defusedxml.ElementTree.parse(content)
-        for element in tree.iter():
-            element.tag = remove_namespace(element.tag)
-        return tree
-
-
-def remove_namespace(tag):
-    return tag.split('}', 1)[1]
 
 
 if __name__ == "__main__":
