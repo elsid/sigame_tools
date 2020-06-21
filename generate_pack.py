@@ -161,10 +161,13 @@ def copy_files(dst_siq, files):
         print(f'Copy files from {path}...')
         with zipfile.ZipFile(path) as src_siq:
             src_siq_file_paths = {urllib.parse.unquote(v): v for v in src_siq.namelist()}
-            for file_type, src_file_name, dst_file_name in path_files:
+            for file_type, src_file_name, dst_file_name, theme_id in path_files:
                 print(f'Request {file_type} file {src_file_name}...')
                 file_dir = SIQ_FILE_TYPE_DIRS[file_type]
-                src_file_path = src_siq_file_paths[os.path.join(file_dir, src_file_name)]
+                src_file_path = src_siq_file_paths.get(os.path.join(file_dir, src_file_name))
+                if src_file_path is None:
+                    raise RuntimeError(f"Can't find referenced {file_type} file {src_file_name} from {path}:"
+                                       + f" package doesn't contain file, fix files or exclude theme by id {theme_id}")
                 dst_file_path = os.path.join(file_dir, dst_file_name)
                 print(f'Copy {path} package file {src_file_path} to {dst_file_path}...')
                 data = read_siq_file(siq=src_siq, path=src_file_path)
@@ -211,7 +214,7 @@ def generate_content(name, rounds):
                 if atom_type and atom.text and atom.text.startswith('@'):
                     extension = atom.text.rsplit('.', 1)[-1]
                     file_name = f'{str(uuid.uuid1())}.{extension}'
-                    files[theme.path].add((atom_type, atom.text[1:], file_name))
+                    files[theme.path].add((atom_type, atom.text[1:], file_name, theme.id))
                     atom.text = f'@{file_name}'
             questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
             theme_element.append(lxml.etree.fromstring(questions_xml))
