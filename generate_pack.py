@@ -8,6 +8,7 @@ import functools
 import io
 import json
 import lxml.etree
+import math
 import os.path
 import random
 import re
@@ -24,12 +25,15 @@ import zipfile
 @click.option('--themes_per_round', type=int, default=1, show_default=True)
 @click.option('--min_questions_per_theme', type=int, default=10, show_default=True)
 @click.option('--max_questions_per_theme', type=int, default=10, show_default=True)
-@click.option('--include_theme', type=str, multiple=True)
-@click.option('--exculde_theme', type=str, multiple=True)
+@click.option('--include_theme_by_name', type=str, multiple=True)
+@click.option('--exclude_theme_by_name', type=str, multiple=True)
+@click.option('--include_theme_by_id', type=str, multiple=True)
+@click.option('--exclude_theme_by_id', type=str, multiple=True)
 @click.option('--random_seed', type=int, default=None)
 @click.option('--package_name', type=str, default='Generated pack')
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
-         max_questions_per_theme, include_theme, exculde_theme, random_seed, package_name):
+         max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
+         random_seed, package_name, include_theme_by_id, exclude_theme_by_id):
     assert rounds >= 0
     assert themes_per_round >= 0
     assert min_questions_per_theme >= 0
@@ -44,36 +48,59 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
             themes_per_round=themes_per_round,
             min_questions_per_theme=min_questions_per_theme,
             max_questions_per_theme=max_questions_per_theme,
-            include_theme=re.compile('|'.join(include_theme)) if include_theme else None,
-            exculde_theme=re.compile('|'.join(exculde_theme)) if exculde_theme else None,
+            include_theme_by_name=re.compile('|'.join(include_theme_by_name)) if include_theme_by_name else None,
+            exclude_theme_by_name=re.compile('|'.join(exclude_theme_by_name)) if exclude_theme_by_name else None,
+            include_theme_by_ids=frozenset(include_theme_by_id),
+            exclude_theme_by_ids=frozenset(exclude_theme_by_id),
         ),
     )
 
 
 def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
-                    max_questions_per_theme, include_theme, exculde_theme):
-    available = set()
-    for v in metadata:
-        if include_theme and not re.search(include_theme, v.theme_name):
-            continue
-        if exculde_theme and re.search(exculde_theme, v.theme_name):
-            continue
-        if v.questions_num < min_questions_per_theme:
-            continue
-        if max_questions_per_theme < v.questions_num:
-            continue
-        available.add(v)
-    print(f'Generate rounds, filtered in {len(available)} themes out of {len(metadata)}...')
+                    max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
+                    include_theme_by_ids, exclude_theme_by_ids):
+    def is_proper_theme(theme):
+        if not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
+            return False
+        if theme.id in include_theme_by_ids or theme.id not in exclude_theme_by_ids:
+            return True
+        return (
+            include_theme_by_name and re.search(include_theme_by_name, theme.theme_name)
+            or exclude_theme_by_name and not re.search(exclude_theme_by_name, theme.theme_name)
+        )
+    available = {v for v in metadata if is_proper_theme(v)}
+    high_priority = {v for v in available if v.id in include_theme_by_ids}
+    available = available.difference(high_priority)
+    high_priority_num = min(int(math.ceil(themes_per_round / rounds)), themes_per_round)
+    if len(available) + len(high_priority) == 0:
+        raise RuntimeError('No themes to generate rounds: all themes are filtered out')
+    print(f'Generate rounds, filtered in {len(available) + len(high_priority)} themes out of {len(metadata)}...')
     for n in range(rounds):
         print(f'Generate round {n}, {len(available)} themes are available...')
+        try_number = 0
         questions_num = random.randint(min_questions_per_theme, max_questions_per_theme)
-        print(f'Sample themes with {questions_num} question(s)...')
-        selected = random.sample(
-            population=sorted(v for v in available if v.questions_num == questions_num),
-            k=min(themes_per_round, len(available)),
-        )
-        available = available.difference(selected)
-        yield str(n), selected
+        while True:
+            samples = sorted(v for v in available if v.questions_num == questions_num)
+            high_priority_samples = sorted(v for v in high_priority if v.questions_num == questions_num)
+            if len(samples) + len(high_priority_samples) < themes_per_round:
+                print(f'Not enough samples for round with {questions_num} question(s): got only {len(samples)}')
+                if min_questions_per_theme == max_questions_per_theme or try_number > 0 and questions_num == max_questions_per_theme:
+                    raise RuntimeError("Can't get sample themes for round: not enough samples")
+                questions_num = min_questions_per_theme + try_number
+                try_number += 1
+                continue
+            print(f'Sample {len(samples)} themes with {questions_num} question(s)...')
+            if len(high_priority_samples) < high_priority_num:
+                first_selected = list(high_priority_samples)
+            else:
+                first_selected = random.sample(population=high_priority_samples, k=themes_per_round)
+            high_priority = high_priority.difference(first_selected)
+            selected = random.sample(population=samples, k=themes_per_round - len(first_selected))
+            available = available.difference(selected)
+            selected.extend(high_priority_samples)
+            random.shuffle(sorted(selected))
+            yield f'Round {n}', selected
+            break
 
 
 def generate_package(name, output, rounds):
@@ -91,11 +118,11 @@ def copy_files(dst_siq, files):
         with zipfile.ZipFile(path) as src_siq:
             src_siq_file_paths = {urllib.parse.unquote(v): v for v in src_siq.namelist()}
             for file_type, src_file_name, dst_file_name in path_files:
-                print(f'Copy {file_type} file {src_file_name}...')
+                print(f'Request {file_type} file {src_file_name}...')
                 file_dir = SIQ_FILE_TYPE_DIRS[file_type]
                 src_file_path = src_siq_file_paths[os.path.join(file_dir, src_file_name)]
                 dst_file_path = os.path.join(file_dir, dst_file_name)
-                print(f'Copy file {src_file_path} to {dst_file_path}...')
+                print(f'Copy {path} package file {src_file_path} to {dst_file_path}...')
                 data = read_siq_file(siq=src_siq, path=src_file_path)
                 write_siq_file(siq=dst_siq, path=dst_file_path, data=data)
 
