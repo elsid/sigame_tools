@@ -4,8 +4,6 @@ import click
 import collections
 import datetime
 import defusedxml.ElementTree
-import functools
-import io
 import json
 import lxml.etree
 import math
@@ -153,8 +151,7 @@ def generate_content(name, rounds):
     ))
     info_element = lxml.etree.SubElement(package_element, 'info', attrib=dict())
     authors_element = lxml.etree.SubElement(info_element, 'authors', attrib=dict())
-    author_element = lxml.etree.SubElement(authors_element, 'author', attrib=dict())
-    author_element.text = 'elsid'
+    authors = collections.OrderedDict({'elsid': {'Composition'}})
     rounds_element = lxml.etree.SubElement(package_element, 'rounds', attrib=dict())
     files = collections.defaultdict(set)
     for name, themes in rounds:
@@ -162,9 +159,7 @@ def generate_content(name, rounds):
         themes_element = lxml.etree.SubElement(round_element, 'themes', attrib=dict())
         for theme in themes:
             theme_element = lxml.etree.SubElement(themes_element, 'theme', attrib=dict(name=theme.theme_name))
-            questions_element = read_questions(theme)
-            for question in questions_element.iter():
-                question.tag = question.tag.split('}', 1)[1]
+            questions_element, theme_authors_element = read_questions_and_authors(theme)
             for atom in questions_element.iter('atom'):
                 atom_type = atom.attrib.get('type')
                 if atom_type and atom.text and atom.text.startswith('@'):
@@ -174,44 +169,46 @@ def generate_content(name, rounds):
                     atom.text = f'@{file_name}'
             questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
             theme_element.append(lxml.etree.fromstring(questions_xml))
+            for author in theme_authors_element:
+                if author.text not in authors:
+                    authors[author.text] = set()
+                authors[author.text].add(theme.package_name)
+    for author in authors.keys():
+        authors_and_roles = f'{author} ({", ".join(sorted(authors[author]))})'
+        lxml.etree.SubElement(authors_element, 'author', attrib=dict()).text = authors_and_roles
     return lxml.etree.ElementTree(package_element), files
 
 
-def read_questions(metadata):
+def read_questions_and_authors(metadata):
     with zipfile.ZipFile(metadata.path) as siq:
-        return get_question(content=get_content(siq), metadata=metadata)
+        content = get_content(siq)
+        return (
+            get_question(content=content, metadata=metadata),
+            get_authors(content)
+        )
+
+
+def get_authors(content):
+    yield from content.iter('author')
 
 
 def get_question(content, metadata):
-    package = content.getroot()
     round_number = 0
-    for rounds in package.getchildren():
-        if not rounds.tag.endswith('rounds'):
+    for round_ in content.iter('round'):
+        round_number += 1
+        theme_number = 0
+        if round_.attrib['name'] != metadata.round_name:
             continue
-        for round_ in rounds.getchildren():
-            if not round_.tag.endswith('round'):
+        for theme in round_.iter('theme'):
+            theme_number += 1
+            if theme.attrib['name'] != metadata.theme_name:
                 continue
-            round_number += 1
-            theme_number = 0
-            if round_.attrib['name'] != metadata.round_name:
+            if round_number != metadata.round_number:
                 continue
-            for themes in round_.getchildren():
-                if not themes.tag.endswith('themes'):
-                    continue
-                for theme in themes.getchildren():
-                    if not theme.tag.endswith('theme'):
-                        continue
-                    theme_number += 1
-                    if theme.attrib['name'] != metadata.theme_name:
-                        continue
-                    if round_number != metadata.round_number:
-                        continue
-                    if theme_number != metadata.theme_number:
-                        continue
-                    for questions in theme.getchildren():
-                        if not questions.tag.endswith('questions'):
-                            continue
-                        return questions
+            if theme_number != metadata.theme_number:
+                continue
+            for questions in theme.iter('questions'):
+                return questions
 
 
 def read_metadata(path):
@@ -234,7 +231,14 @@ Metadata = collections.namedtuple('Metadata', (
 
 def get_content(siq):
     with siq.open('content.xml') as content:
-        return defusedxml.ElementTree.parse(content)
+        tree = defusedxml.ElementTree.parse(content)
+        for element in tree.iter():
+            element.tag = remove_namespace(element.tag)
+        return tree
+
+
+def remove_namespace(tag):
+    return tag.split('}', 1)[1]
 
 
 CONTENT_TYPES = (

@@ -5,7 +5,6 @@ import collections
 import defusedxml.ElementTree
 import json
 import os.path
-import sys
 import uuid
 import zipfile
 
@@ -42,31 +41,21 @@ def process_files(paths):
 def get_metadata(path, content):
     package = content.getroot()
     round_number = 0
-    for rounds in package.getchildren():
-        if not rounds.tag.endswith('rounds'):
-            continue
-        for round_ in rounds.getchildren():
-            if not round_.tag.endswith('round'):
-                continue
-            round_number += 1
-            theme_number = 0
-            for themes in round_.getchildren():
-                if not themes.tag.endswith('themes'):
-                    continue
-                for theme in themes.getchildren():
-                    if not theme.tag.endswith('theme'):
-                        continue
-                    theme_number += 1
-                    yield Metadata(
-                        id=str(uuid.uuid1()),
-                        round_number=round_number,
-                        theme_number=theme_number,
-                        path=path,
-                        package_name=package.attrib['name'],
-                        round_name=round_.attrib['name'],
-                        theme_name=theme.attrib['name'],
-                        questions_num=get_number_of_questions(theme),
-                    )
+    for round_ in package.iter('round'):
+        round_number += 1
+        theme_number = 0
+        for theme in round_.iter('theme'):
+            theme_number += 1
+            yield Metadata(
+                id=str(uuid.uuid1()),
+                round_number=round_number,
+                theme_number=theme_number,
+                path=path,
+                package_name=package.attrib['name'],
+                round_name=round_.attrib['name'],
+                theme_name=theme.attrib['name'],
+                questions_num=get_number_of_questions(theme),
+            )
 
 
 Metadata = collections.namedtuple('Metadata', (
@@ -82,18 +71,19 @@ Metadata = collections.namedtuple('Metadata', (
 
 
 def get_number_of_questions(theme):
-    result = 0
-    for questions in theme.getchildren():
-        if not questions.tag.endswith('questions'):
-            continue
-        for question in questions.getchildren():
-            result += question.tag.endswith('question')
-    return result
+    return sum(1 for _ in theme.iter('question'))
 
 
 def get_content(siq):
     with siq.open('content.xml') as content:
-        return defusedxml.ElementTree.parse(content)
+        tree = defusedxml.ElementTree.parse(content)
+        for element in tree.iter():
+            element.tag = remove_namespace(element.tag)
+        return tree
+
+
+def remove_namespace(tag):
+    return tag.split('}', 1)[1]
 
 
 if __name__ == "__main__":
