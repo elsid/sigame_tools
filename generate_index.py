@@ -11,6 +11,7 @@ from sigame_tools.common import (
     INDEX_VERSION,
     ThemeMetadata,
     get_content,
+    read_json,
 )
 
 
@@ -40,17 +41,23 @@ def process_files(paths):
             print(f'Ignore {path}: not .siq file')
             continue
         print(f'Read .siq file {path}')
+        meta_path = path + '.meta.json'
+        if os.path.exists(meta_path):
+            print(f'Read .meta.json file {meta_path}')
+            file_name = read_json(meta_path).get('name')
+        else:
+            file_name = os.path.basename(path)
         try:
             with zipfile.ZipFile(path) as siq:
                 if not 'content.xml' in siq.namelist():
                     print(f'Error: no content.xml in {path}: {siq.namelist()}')
                     continue
-                yield from get_themes_metadata(path=path, content=get_content(siq))
+                yield from get_themes_metadata(path=path, content=get_content(siq), file_name=file_name)
         except zipfile.BadZipFile as e:
             print(f'Read {path} error: {str(e)}')
 
 
-def get_themes_metadata(path, content):
+def get_themes_metadata(path, content, file_name):
     package = content.getroot()
     authors = tuple(sorted({v.text for v in package.iter('author') if v.text}))
     round_number = 0
@@ -71,6 +78,7 @@ def get_themes_metadata(path, content):
                 authors=authors,
                 base64_encoded_right_answers=tuple(get_base64_encoded_right_answers(theme)),
                 round_type=round_.attrib.get('type'),
+                file_name=file_name,
             )
 
 

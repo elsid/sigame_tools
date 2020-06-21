@@ -13,6 +13,10 @@ import retry
 import time
 import urllib.parse
 
+from sigame_tools.common import (
+    read_json,
+)
+
 
 @click.command()
 @click.option('--offset', type=int, default=0)
@@ -110,8 +114,7 @@ def fs_cached(extension, mode_suffix):
             if os.path.exists(data_path) and os.path.exists(meta_path):
                 with open(data_path, 'r' + mode_suffix) as stream:
                     content = stream.read()
-                with open(meta_path, 'r') as stream:
-                    meta = json.load(stream)
+                meta = read_json(meta_path)
                 meta['cached'] = True
                 return content, meta
             content, meta = f(url=url, *args, **kwargs)
