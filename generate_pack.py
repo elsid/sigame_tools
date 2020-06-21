@@ -24,9 +24,9 @@ from sigame_tools.common import (
 @click.command()
 @click.option('--index_path', type=click.Path(), required=True)
 @click.option('--output', type=str, required=True)
-@click.option('--rounds', type=int, default=1, show_default=True)
-@click.option('--themes_per_round', type=int, default=1, show_default=True)
-@click.option('--min_questions_per_theme', type=int, default=10, show_default=True)
+@click.option('--rounds', type=int, default=3, show_default=True)
+@click.option('--themes_per_round', type=int, default=3, show_default=True)
+@click.option('--min_questions_per_theme', type=int, default=5, show_default=True)
 @click.option('--max_questions_per_theme', type=int, default=10, show_default=True)
 @click.option('--include_theme_by_name', type=str, multiple=True)
 @click.option('--exclude_theme_by_name', type=str, multiple=True)
@@ -37,9 +37,9 @@ from sigame_tools.common import (
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
          random_seed, package_name, include_theme_by_id, exclude_theme_by_id):
-    assert rounds >= 0
-    assert themes_per_round >= 0
-    assert min_questions_per_theme >= 0
+    assert rounds > 0
+    assert themes_per_round > 0
+    assert min_questions_per_theme > 0
     assert min_questions_per_theme <= max_questions_per_theme
     random.seed(random_seed)
     generate_package(
@@ -63,7 +63,7 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
                     max_questions_per_theme, include_theme_by_name, exclude_theme_by_name,
                     include_theme_by_ids, exclude_theme_by_ids):
     def is_proper_theme(theme):
-        if not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
+        if theme.round_type == None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
             return False
         if theme.id in include_theme_by_ids or theme.id not in exclude_theme_by_ids:
             return True
@@ -71,22 +71,37 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
             include_theme_by_name and re.search(include_theme_by_name, theme.theme_name)
             or exclude_theme_by_name and not re.search(exclude_theme_by_name, theme.theme_name)
         )
-    available = {v for v in metadata if is_proper_theme(v)}
-    high_priority = {v for v in available if v.id in include_theme_by_ids}
-    available = available.difference(high_priority)
-    high_priority_num = min(int(math.ceil(themes_per_round / rounds)), themes_per_round)
-    if len(available) + len(high_priority) == 0:
-        raise RuntimeError('No themes to generate rounds: all themes are filtered out')
-    print(f'Generate rounds, filtered in {len(available) + len(high_priority)} themes out of {len(metadata)}...')
-    for n in range(rounds):
-        print(f'Generate round {n}, {len(available)} themes are available...')
+    available, high_priority = filter_themes(
+        metadata=metadata,
+        include_theme_by_ids=include_theme_by_ids,
+        is_proper_theme=is_proper_theme,
+    )
+    print(f'Generate rounds, filtered in {len(available[None]) + len(high_priority[None])} normal '
+          + f'{len(available["final"]) + len(high_priority["final"])} final and themes and out of {len(metadata)}...')
+    for round_type in (None, 'final'):
+        if len(available[round_type]) + len(high_priority[round_type]) == 0:
+            raise RuntimeError(f'No themes to generate {round_type or "normal"} rounds: all themes are filtered out')
+    for round_number in range(rounds):
+        if round_number == rounds - 1:
+            round_name = 'Final round'
+            round_type = 'final'
+            high_priority_num = themes_per_round
+            min_questions_per_theme = 1
+            max_questions_per_theme = 1
+        else:
+            round_name = f'Round {round_number}'
+            round_type = None
+            high_priority_num = min(int(math.ceil(themes_per_round / (rounds - 1))), themes_per_round)
+        print(f'Generate {round_type or "normal"} round {round_number},'
+              + f' {len(available[round_type]) + len(high_priority[round_type])} themes are available...')
         try_number = 0
         questions_num = random.randint(min_questions_per_theme, max_questions_per_theme)
         while True:
-            samples = sorted(v for v in available if v.questions_num == questions_num)
-            high_priority_samples = sorted(v for v in high_priority if v.questions_num == questions_num)
+            samples = sorted(v for v in available[round_type] if v.questions_num == questions_num)
+            high_priority_samples = sorted(v for v in high_priority[round_type] if v.questions_num == questions_num)
             if len(samples) + len(high_priority_samples) < themes_per_round:
-                print(f'Not enough samples for round with {questions_num} question(s): got only {len(samples)}')
+                print(f'Got only {len(samples) + len(high_priority_samples)}/{themes_per_round} themes for'
+                      + f' a {round_type or "normal"} round with {questions_num} question(s)')
                 if min_questions_per_theme == max_questions_per_theme or try_number > 0 and questions_num == max_questions_per_theme:
                     raise RuntimeError("Can't get sample themes for round: not enough samples")
                 questions_num = min_questions_per_theme + try_number
@@ -97,13 +112,25 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
                 first_selected = list(high_priority_samples)
             else:
                 first_selected = random.sample(population=high_priority_samples, k=themes_per_round)
-            high_priority = high_priority.difference(first_selected)
+            high_priority[round_type] = high_priority[round_type].difference(first_selected)
             selected = random.sample(population=samples, k=themes_per_round - len(first_selected))
-            available = available.difference(selected)
+            available[round_type] = available[round_type].difference(selected)
             selected.extend(high_priority_samples)
             random.shuffle(sorted(selected))
-            yield f'Round {n}', selected
+            yield Round(name=round_name, type=round_type, themes=selected)
             break
+
+
+def filter_themes(metadata, include_theme_by_ids, is_proper_theme):
+    available = collections.defaultdict(set)
+    high_priority = collections.defaultdict(set)
+    for v in metadata:
+        if is_proper_theme(v):
+            if v.id in include_theme_by_ids:
+                high_priority[v.round_type].add(v)
+            else:
+                available[v.round_type].add(v)
+    return available, high_priority
 
 
 def generate_package(name, output, rounds):
@@ -159,10 +186,10 @@ def generate_content(name, rounds):
     authors = collections.OrderedDict({'elsid': {'Composition'}})
     rounds_element = lxml.etree.SubElement(package_element, 'rounds', attrib=dict())
     files = collections.defaultdict(set)
-    for name, themes in rounds:
-        round_element = lxml.etree.SubElement(rounds_element, 'round', attrib=dict(name=name))
+    for round_ in rounds:
+        round_element = lxml.etree.SubElement(rounds_element, 'round', attrib=get_round_attrib(round_))
         themes_element = lxml.etree.SubElement(round_element, 'themes', attrib=dict())
-        for theme in themes:
+        for theme in round_.themes:
             theme_element = lxml.etree.SubElement(themes_element, 'theme', attrib=dict(name=theme.theme_name))
             questions_element, theme_authors_element = read_questions_and_authors(theme)
             for atom in questions_element.iter('atom'):
@@ -182,6 +209,13 @@ def generate_content(name, rounds):
         authors_and_roles = f'{author} ({", ".join(sorted(authors[author]))})'
         lxml.etree.SubElement(authors_element, 'author', attrib=dict()).text = authors_and_roles
     return lxml.etree.ElementTree(package_element), files
+
+
+def get_round_attrib(round_):
+    attrib = dict(name=round_.name)
+    if round_.type:
+        attrib['type'] = round_.type
+    return attrib
 
 
 def read_questions_and_authors(metadata):
@@ -238,6 +272,12 @@ SIQ_FILE_TYPE_DIRS = dict(
     video='Video',
     voice='Audio',
 )
+
+Round = collections.namedtuple('Round', (
+    'name',
+    'type',
+    'themes',
+))
 
 
 if __name__ == "__main__":

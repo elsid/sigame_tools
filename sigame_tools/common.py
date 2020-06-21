@@ -13,6 +13,7 @@ Metadata = collections.namedtuple('Metadata', (
     'questions_num',
     'authors',
     'base64_encoded_right_answers',
+    'round_type',
 ))
 
 

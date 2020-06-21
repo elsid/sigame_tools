@@ -62,6 +62,7 @@ def get_metadata(path, content):
                 questions_num=get_number_of_questions(theme),
                 authors=authors,
                 base64_encoded_right_answers=tuple(get_base64_encoded_right_answers(theme)),
+                round_type=round_.attrib.get('type'),
             )
 
 
