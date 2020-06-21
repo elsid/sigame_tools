@@ -15,9 +15,9 @@ import xml.etree.ElementTree
 import zipfile
 
 from sigame_tools.common import (
-    Metadata,
+    ThemeMetadata,
     get_content,
-    read_metadata,
+    read_index,
 )
 
 
@@ -46,7 +46,7 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
         name=package_name,
         output=output,
         rounds=generate_rounds(
-            metadata=read_metadata(index_path),
+            metadata=read_index(index_path).themes,
             rounds=rounds,
             themes_per_round=themes_per_round,
             min_questions_per_theme=min_questions_per_theme,

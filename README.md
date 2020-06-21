@@ -31,28 +31,36 @@ Example:
 Will read all packages in cache directory and produce a JSON file similar to this one:
 
 ```json
-[
-  {
-    "id": "bccea7dc-b355-11ea-b895-04d4c4f20e47",
-    "round_number": 1,
-    "theme_number": 3,
-    "path": "download/04_Voprosiki.siq",
-    "package_name": "Имя пакета",
-    "round_name": "1-й раунд",
-    "theme_name": "Игры I",
-    "questions_num": 7
-  },
-  {
-    "id": "bccf1492-b355-11ea-b895-04d4c4f20e47",
-    "round_number": 1,
-    "theme_number": 1,
-    "path": "download/05_Voprosiki.siq",
-    "package_name": "Ласт пак",
-    "round_name": "1-й раунд",
-    "theme_name": "Пёсики",
-    "questions_num": 7
-  }
-]
+{
+    "version": 1,
+    "themes": [
+        {
+            "id": "ce44f7ec-b3d1-11ea-a01c-04d4c4f20e47",
+            "round_number": 1,
+            "theme_number": 1,
+            "path": "cache/Package_2010_11.siq",
+            "package_name": "2010_11",
+            "round_name": "1-й раунд",
+            "theme_name": "ФРАНЦУЗКИЕ ПИИТЫ",
+            "questions_num": 5,
+            "authors": [
+                "Александр Ланин",
+                "Владимир Хиль",
+                "Михаил Перлин"
+            ],
+            "base64_encoded_right_answers": [
+                "0JbQsNC90L3QsCDQlCfQkNGA0Lo=",
+                "0JDRgNCw0LzQuNGB",
+                "0KTRgNCw0L3RgdGD0LAg0JLQuNC50L7QvQ==",
+                "0JLQuNC50L7QvQ==",
+                "0K3QstCw0YDQuNGB0YIg0J/QsNGA0L3QuA==",
+                "0J/QsNGA0L3QuA==",
+                "0JzQsNGA0Y0="
+            ],
+            "round_type": null
+        }
+    ]
+}
 ```
 
 ## Generate package

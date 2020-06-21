@@ -8,7 +8,8 @@ import uuid
 import zipfile
 
 from sigame_tools.common import (
-    Metadata,
+    INDEX_VERSION,
+    ThemeMetadata,
     get_content,
 )
 
@@ -17,9 +18,13 @@ from sigame_tools.common import (
 @click.option('--output', type=str, required=True)
 @click.argument('paths', nargs=-1, type=str, required=True)
 def main(output, paths):
-    data = [v._asdict() for v in process_files(paths)]
+    themes = [v._asdict() for v in process_files(paths)]
+    index = dict(
+        version=INDEX_VERSION,
+        themes=themes,
+    )
     with open(output, 'w') as stream:
-        json.dump(data, stream, ensure_ascii=False)
+        json.dump(index, stream, ensure_ascii=False)
 
 
 def process_files(paths):
@@ -37,12 +42,12 @@ def process_files(paths):
                 if not 'content.xml' in siq.namelist():
                     print(f'Error: no content.xml in {path}: {siq.namelist()}')
                     continue
-                yield from get_metadata(path=path, content=get_content(siq))
+                yield from get_themes_metadata(path=path, content=get_content(siq))
         except zipfile.BadZipFile as e:
             print(f'Read {path} error: {str(e)}')
 
 
-def get_metadata(path, content):
+def get_themes_metadata(path, content):
     package = content.getroot()
     authors = tuple(sorted({v.text for v in package.iter('author') if v.text}))
     round_number = 0
@@ -51,7 +56,7 @@ def get_metadata(path, content):
         theme_number = 0
         for theme in round_.iter('theme'):
             theme_number += 1
-            yield Metadata(
+            yield ThemeMetadata(
                 id=str(uuid.uuid1()),
                 round_number=round_number,
                 theme_number=theme_number,
