@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import click
 import collections
 import defusedxml.ElementTree
@@ -57,6 +58,7 @@ def get_metadata(path, content):
                 theme_name=theme.attrib['name'],
                 questions_num=get_number_of_questions(theme),
                 authors=authors,
+                base64_encoded_right_answers=tuple(get_base64_encoded_right_answers(theme)),
             )
 
 
@@ -70,11 +72,19 @@ Metadata = collections.namedtuple('Metadata', (
     'theme_name',
     'questions_num',
     'authors',
+    'base64_encoded_right_answers',
 ))
 
 
 def get_number_of_questions(theme):
     return sum(1 for _ in theme.iter('question'))
+
+
+def get_base64_encoded_right_answers(theme):
+    for right in theme.iter('right'):
+        for answer in right.iter('answer'):
+            if answer.text:
+                yield base64.b64encode(answer.text.encode('utf-8')).decode('utf-8')
 
 
 def get_content(siq):

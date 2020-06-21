@@ -217,8 +217,12 @@ def read_metadata(path):
         return [make_metadata(**v) for v in data]
 
 
-def make_metadata(authors, **kwargs):
-    return Metadata(authors=tuple(authors), **kwargs)
+def make_metadata(authors, base64_encoded_right_answers, **kwargs):
+    return Metadata(
+        authors=tuple(authors),
+        base64_encoded_right_answers=tuple(base64_encoded_right_answers),
+        **kwargs,
+    )
 
 
 Metadata = collections.namedtuple('Metadata', (
@@ -231,6 +235,7 @@ Metadata = collections.namedtuple('Metadata', (
     'theme_name',
     'questions_num',
     'authors',
+    'base64_encoded_right_answers',
 ))
 
 
