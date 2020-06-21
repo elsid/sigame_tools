@@ -54,3 +54,25 @@ Will read all packages in cache directory and produce a JSON file similar to thi
   }
 ]
 ```
+
+## Generate package
+
+[generate_pack.py](generate_pack.py) generates a new SIGame package by sampling themes
+from a given index. Themes can belong to different packages.
+Each round will contain the same number of questions for each theme.
+Themes are not duplicated. All required media files are copied into a new package from all sources.
+Possible media file names conflicts are properly handled.
+
+Example:
+
+```bash
+./generate_pack.py \
+    --index_path index.json \
+    --rounds=3 \
+    --themes_per_round=10 \
+    --min_questions_per_theme=7 \
+    --max_questions_per_theme=10 \
+    --output my_pack.siq
+```
+
+Will generate a new pack file with 3 rounds each containing 10 themes. Each theme will contain from 7 to 10 number of questions.

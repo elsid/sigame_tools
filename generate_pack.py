@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+
+import click
+import collections
+import datetime
+import defusedxml.ElementTree
+import functools
+import io
+import json
+import lxml.etree
+import os.path
+import random
+import re
+import urllib.parse
+import uuid
+import xml.etree.ElementTree
+import zipfile
+
+
+@click.command()
+@click.option('--index_path', type=click.Path(), required=True)
+@click.option('--output', type=str, required=True)
+@click.option('--rounds', type=int, default=1, show_default=True)
+@click.option('--themes_per_round', type=int, default=1, show_default=True)
+@click.option('--min_questions_per_theme', type=int, default=10, show_default=True)
+@click.option('--max_questions_per_theme', type=int, default=10, show_default=True)
+@click.option('--include_theme', type=str, multiple=True)
+@click.option('--exculde_theme', type=str, multiple=True)
+@click.option('--random_seed', type=int, default=None)
+@click.option('--package_name', type=str, default='Generated pack')
+def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
+         max_questions_per_theme, include_theme, exculde_theme, random_seed, package_name):
+    assert rounds >= 0
+    assert themes_per_round >= 0
+    assert min_questions_per_theme >= 0
+    assert min_questions_per_theme <= max_questions_per_theme
+    random.seed(random_seed)
+    generate_package(
+        name=package_name,
+        output=output,
+        rounds=generate_rounds(
+            metadata=read_metadata(index_path),
+            rounds=rounds,
+            themes_per_round=themes_per_round,
+            min_questions_per_theme=min_questions_per_theme,
+            max_questions_per_theme=max_questions_per_theme,
+            include_theme=re.compile('|'.join(include_theme)) if include_theme else None,
+            exculde_theme=re.compile('|'.join(exculde_theme)) if exculde_theme else None,
+        ),
+    )
+
+
+def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
+                    max_questions_per_theme, include_theme, exculde_theme):
+    available = set()
+    for v in metadata:
+        if include_theme and not re.search(include_theme, v.theme_name):
+            continue
+        if exculde_theme and re.search(exculde_theme, v.theme_name):
+            continue
+        if v.questions_num < min_questions_per_theme:
+            continue
+        if max_questions_per_theme < v.questions_num:
+            continue
+        available.add(v)
+    print(f'Generate rounds, filtered in {len(available)} themes out of {len(metadata)}...')
+    for n in range(rounds):
+        print(f'Generate round {n}, {len(available)} themes are available...')
+        questions_num = random.randint(min_questions_per_theme, max_questions_per_theme)
+        print(f'Sample themes with {questions_num} question(s)...')
+        selected = random.sample(
+            population=sorted(v for v in available if v.questions_num == questions_num),
+            k=min(themes_per_round, len(available)),
+        )
+        available = available.difference(selected)
+        yield str(n), selected
+
+
+def generate_package(name, output, rounds):
+    content, files = generate_content(name=name, rounds=rounds)
+    with zipfile.ZipFile(output, 'w') as siq:
+        for path, data in CONST_FILES:
+            write_siq_file(siq=siq, path=path, data=data.encode('utf-8'))
+        write_content(siq=siq, content=content)
+        copy_files(dst_siq=siq, files=files)
+
+
+def copy_files(dst_siq, files):
+    for path, path_files in files.items():
+        print(f'Copy files from {path}...')
+        with zipfile.ZipFile(path) as src_siq:
+            src_siq_file_paths = {urllib.parse.unquote(v): v for v in src_siq.namelist()}
+            for file_type, src_file_name, dst_file_name in path_files:
+                print(f'Copy {file_type} file {src_file_name}...')
+                file_dir = SIQ_FILE_TYPE_DIRS[file_type]
+                src_file_path = src_siq_file_paths[os.path.join(file_dir, src_file_name)]
+                dst_file_path = os.path.join(file_dir, dst_file_name)
+                print(f'Copy file {src_file_path} to {dst_file_path}...')
+                data = read_siq_file(siq=src_siq, path=src_file_path)
+                write_siq_file(siq=dst_siq, path=dst_file_path, data=data)
+
+
+def write_content(siq, content):
+    with siq.open('content.xml', 'w') as stream:
+        content.write(stream, xml_declaration=True, encoding='utf-8')
+
+
+def write_siq_file(siq, path, data):
+    with siq.open(path, 'w') as stream:
+        stream.write(data)
+
+
+def read_siq_file(siq, path):
+    with siq.open(path) as stream:
+        return stream.read()
+
+
+def generate_content(name, rounds):
+    package_element = lxml.etree.Element('package', attrib=dict(
+        name=name,
+        version='4',
+        id=str(uuid.uuid1()),
+        date=datetime.datetime.now().strftime(r'%d.%m.%Y'),
+        difficutly='5',
+        xmlns="http://vladimirkhil.com/ygpackage3.0.xsd",
+    ))
+    info_element = lxml.etree.SubElement(package_element, 'info', attrib=dict())
+    authors_element = lxml.etree.SubElement(info_element, 'authors', attrib=dict())
+    author_element = lxml.etree.SubElement(authors_element, 'author', attrib=dict())
+    author_element.text = 'elsid'
+    rounds_element = lxml.etree.SubElement(package_element, 'rounds', attrib=dict())
+    files = collections.defaultdict(set)
+    for name, themes in rounds:
+        round_element = lxml.etree.SubElement(rounds_element, 'round', attrib=dict(name=name))
+        themes_element = lxml.etree.SubElement(round_element, 'themes', attrib=dict())
+        for theme in themes:
+            theme_element = lxml.etree.SubElement(themes_element, 'theme', attrib=dict(name=theme.theme_name))
+            questions_element = read_questions(theme)
+            for question in questions_element.iter():
+                question.tag = question.tag.split('}', 1)[1]
+            for atom in questions_element.iter('atom'):
+                atom_type = atom.attrib.get('type')
+                if atom_type and atom.text and atom.text.startswith('@'):
+                    extension = atom.text.rsplit('.', 1)[-1]
+                    file_name = f'{str(uuid.uuid1())}.{extension}'
+                    files[theme.path].add((atom_type, atom.text[1:], file_name))
+                    atom.text = f'@{file_name}'
+            questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
+            theme_element.append(lxml.etree.fromstring(questions_xml))
+    return lxml.etree.ElementTree(package_element), files
+
+
+def read_questions(metadata):
+    with zipfile.ZipFile(metadata.path) as siq:
+        return get_question(content=get_content(siq), metadata=metadata)
+
+
+def get_question(content, metadata):
+    package = content.getroot()
+    round_number = 0
+    for rounds in package.getchildren():
+        if not rounds.tag.endswith('rounds'):
+            continue
+        for round_ in rounds.getchildren():
+            if not round_.tag.endswith('round'):
+                continue
+            round_number += 1
+            theme_number = 0
+            if round_.attrib['name'] != metadata.round_name:
+                continue
+            for themes in round_.getchildren():
+                if not themes.tag.endswith('themes'):
+                    continue
+                for theme in themes.getchildren():
+                    if not theme.tag.endswith('theme'):
+                        continue
+                    theme_number += 1
+                    if theme.attrib['name'] != metadata.theme_name:
+                        continue
+                    if round_number != metadata.round_number:
+                        continue
+                    if theme_number != metadata.theme_number:
+                        continue
+                    for questions in theme.getchildren():
+                        if not questions.tag.endswith('questions'):
+                            continue
+                        return questions
+
+
+def read_metadata(path):
+    with open(path) as stream:
+        data = json.load(stream)
+        return [Metadata(**v) for v in data]
+
+
+Metadata = collections.namedtuple('Metadata', (
+    'id',
+    'round_number',
+    'theme_number',
+    'path',
+    'package_name',
+    'round_name',
+    'theme_name',
+    'questions_num',
+))
+
+
+def get_content(siq):
+    with siq.open('content.xml') as content:
+        return defusedxml.ElementTree.parse(content)
+
+
+CONTENT_TYPES = (
+    r'<?xml version="1.0" encoding="utf-8"?>'
+    + r'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + r'<Default Extension="xml" ContentType="si/xml" />'
+    + r'</Types>'
+)
+
+TEXTS_AUTHORS = r'<?xml version="1.0" encoding="utf-8"?><Authors />'
+
+TEXTS_SOURCES = r'<?xml version="1.0" encoding="utf-8"?><Sources />'
+
+CONST_FILES = (
+    ('[Content_Types].xml', CONTENT_TYPES),
+    ('Texts/authors.xml', TEXTS_AUTHORS),
+    ('Texts/sources.xml', TEXTS_SOURCES),
+)
+
+SIQ_FILE_TYPE_DIRS = dict(
+    image='Images',
+    video='Video',
+    voice='Audio',
+)
+
+
+if __name__ == "__main__":
+    main()
