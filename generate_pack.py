@@ -3,7 +3,6 @@
 import click
 import collections
 import datetime
-import json
 import lxml.etree
 import math
 import os.path
@@ -15,7 +14,6 @@ import xml.etree.ElementTree
 import zipfile
 
 from sigame_tools.common import (
-    ThemeMetadata,
     get_content,
     read_index,
 )

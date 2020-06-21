@@ -42,14 +42,14 @@ def main(offset, pages, vk_group_url, user_agent, cache_dir, speed_limit):
 
 def download_files(urls, user_agent, cache_dir, speed_limit):
     avg_speed = MovingSpeedAverage(10)
-    avg_speed.add(time=time.time(), distance=0)
+    avg_speed.add(cur_time=time.time(), distance=0)
     for url in urls:
         try:
             while speed_limit and avg_speed.get() > speed_limit:
                 time.sleep(random.normalvariate(mu=1, sigma=0.1))
-                avg_speed.add(time=time.time(), distance=0)
+                avg_speed.add(cur_time=time.time(), distance=0)
             content, meta = get_file(url=url, user_agent=user_agent, cache_dir=cache_dir)
-            avg_speed.add(time=time.time(), distance=len(content) * (not meta.get('cached')))
+            avg_speed.add(cur_time=time.time(), distance=len(content) * (not meta.get('cached')))
             print(f'Recent speed: {int(avg_speed.get())} B/s (limit: {speed_limit} B/s)')
         except RuntimeError as e:
             print(f'Error while downloading {url}: {str(e)}')
@@ -62,8 +62,8 @@ class MovingSpeedAverage:
         self.__time = collections.deque()
         self.__distance = collections.deque()
 
-    def add(self, time, distance):
-        self.__time.append(time)
+    def add(self, cur_time, distance):
+        self.__time.append(cur_time)
         self.__distance.append(distance)
         self.__sum_distance += distance
         while self.__time[-1] - self.__time[0] > self.__window_duration and len(self.__time) >= 2:
@@ -144,7 +144,7 @@ class EmptyHistory(RuntimeError):
 
 
 @fs_cached(extension='siq', mode_suffix='b')
-def get_file(url, user_agent, **kwargs):
+def get_file(url, user_agent, **_):
     print(f'Download file from {url}')
     response = requests.get(url=url, headers={'User-Agent': user_agent})
     if not response.status_code == 200:
@@ -157,7 +157,7 @@ def get_file(url, user_agent, **kwargs):
 
 @fs_cached(extension='html', mode_suffix='')
 @retry.retry(BadResponse, tries=3, delay=0.1, backoff=1.5)
-def get_page(url, user_agent, **kwargs):
+def get_page(url, user_agent, **_):
     print(f'Download page from {url}')
     response = requests.get(url=url, headers={'User-Agent': user_agent})
     if not response.status_code == 200:
