@@ -37,8 +37,9 @@ from sigame_tools.filters import (
                    ' will put themes into package with higher priority that include.')
 @click.option('--random_seed', type=int, default=None)
 @click.option('--package_name', type=str, default='Generated pack')
+@click.option('--unique_theme_names', type=click.Choice(('true', 'false')), default='true', show_default=True)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
-         max_questions_per_theme, random_seed, package_name, **kwargs):
+         max_questions_per_theme, random_seed, package_name, unique_theme_names, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
@@ -55,12 +56,13 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
             max_questions_per_theme=max_questions_per_theme,
             filter_f=make_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
             is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
+            use_unique_theme_names=unique_theme_names == 'true',
         ),
     )
 
 
 def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
-                    max_questions_per_theme, filter_f, is_high_priority):
+                    max_questions_per_theme, filter_f, is_high_priority, use_unique_theme_names):
     def is_proper_theme(theme):
         if theme.round_type == None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
             return False
@@ -75,6 +77,7 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
     for round_type in (None, 'final'):
         if len(available[round_type]) + len(high_priority[round_type]) == 0:
             raise RuntimeError(f'No themes to generate {round_type or "normal"} rounds: all themes are filtered out')
+    used_theme_names = set()
     for round_number in range(rounds):
         if round_number == rounds - 1:
             round_name = 'Final round'
@@ -86,34 +89,64 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
             round_name = f'Round {round_number}'
             round_type = None
             high_priority_num = min(int(math.ceil(themes_per_round / (rounds - 1))), themes_per_round)
-        print(f'Generate {round_type or "normal"} round {round_number},'
-              + f' {len(available[round_type]) + len(high_priority[round_type])} themes are available...')
-        try_number = 0
-        questions_num = random.randint(min_questions_per_theme, max_questions_per_theme)
-        while True:
-            samples = sorted(v for v in available[round_type] if v.questions_num == questions_num)
+        print(f'Generate {round_type or "normal"} round {round_number}: {len(high_priority[round_type])}'
+              + f' high priority and {len(available[round_type])} regular themes are available...')
+        questions_nums = list(range(min_questions_per_theme, max_questions_per_theme + 1))
+        random.shuffle(questions_nums)
+        for questions_num in questions_nums:
             high_priority_samples = sorted(v for v in high_priority[round_type] if v.questions_num == questions_num)
-            if len(samples) + len(high_priority_samples) < themes_per_round:
-                print(f'Got only {len(samples) + len(high_priority_samples)}/{themes_per_round} themes for'
-                      + f' a {round_type or "normal"} round with {questions_num} question(s)')
-                if min_questions_per_theme == max_questions_per_theme or try_number > 0 and questions_num == max_questions_per_theme:
-                    raise RuntimeError("Can't get sample themes for round: not enough samples")
-                questions_num = min_questions_per_theme + try_number
-                try_number += 1
-                continue
-            print(f'Sample {len(samples) + len(high_priority_samples)} themes with {questions_num} question(s)...')
+            regular_samples = sorted(v for v in available[round_type] if v.questions_num == questions_num)
+            if len(high_priority_samples) + len(regular_samples) < themes_per_round:
+                raise RuntimeError("Can't get themes for round: not enough samples, got only"
+                                    + f' {len(high_priority_samples) + len(regular_samples)}/{themes_per_round} themes'
+                                    + f' for a {round_type or "normal"} round with {questions_num} question(s)')
             if len(high_priority_samples) < high_priority_num:
-                first_selected = list(high_priority_samples)
+                first_selected = high_priority_samples
             else:
                 first_selected = random.sample(population=high_priority_samples, k=high_priority_num)
             high_priority[round_type] = high_priority[round_type].difference(first_selected)
-            selected = random.sample(population=samples, k=themes_per_round - len(first_selected))
-            available[round_type] = available[round_type].difference(selected)
-            selected.extend(first_selected)
-            selected = sorted(selected)
-            random.shuffle(selected)
-            yield Round(name=round_name, type=round_type, themes=selected)
-            break
+            second_selected = list()
+            while True:
+                new_selected = random.sample(
+                    population=regular_samples,
+                    k=themes_per_round - len(first_selected) - len(second_selected),
+                )
+                if use_unique_theme_names:
+                    new_selected = list(filter_used_theme_names(
+                        themes=new_selected,
+                        used_theme_names=used_theme_names,
+                        available=available[round_type],
+                    ))
+                    second_selected.extend(new_selected)
+                    total_selected_num = len(first_selected) + len(second_selected)
+                    if total_selected_num < themes_per_round:
+                        print(f'Filtered out duplicate theme names, {total_selected_num}/{themes_per_round} thems are left')
+                        regular_samples = [v for v in available[round_type] if v.questions_num == questions_num]
+                        has_num = len(high_priority_samples) + len(regular_samples) + len(first_selected) + len(second_selected)
+                        if has_num < themes_per_round:
+                            raise RuntimeError("Can't get themes for round: not enough samples, got only"
+                                               + f' {has_num}/{themes_per_round} themes for a'
+                                               + f' {round_type or "normal"} round with {questions_num} question(s)')
+                        continue
+                else:
+                    available[round_type] = available[round_type].difference(new_selected)
+                    second_selected.extend(new_selected)
+                selected = first_selected + second_selected
+                random.shuffle(selected)
+                yield Round(name=round_name, type=round_type, themes=selected)
+                break
+        if len(selected) < themes_per_round:
+            raise RuntimeError("Can't get themes for round: not enough samples for a"
+                                + f' {round_type or "normal"} round with {questions_num} question(s)')
+
+
+def filter_used_theme_names(themes, used_theme_names, available):
+    for theme in themes:
+        theme_name = theme.theme_name.strip()
+        if theme_name not in used_theme_names:
+            yield theme
+            used_theme_names.add(theme_name)
+            available.remove(theme)
 
 
 def filter_themes(metadata, is_proper_theme, is_high_priority):
