@@ -2,12 +2,10 @@
 
 import click
 import deepdiff
-import json
 import os.path
 import zipfile
 
 from sigame_tools.common import (
-    INDEX_VERSION,
     NoContentXml,
     ThemeMetadata,
     build_themes_index,
@@ -15,6 +13,7 @@ from sigame_tools.common import (
     get_themes_metadata,
     read_content,
     read_index,
+    write_index,
 )
 
 
@@ -28,12 +27,7 @@ def main(index_path, output, force, paths):
     processed_paths = set()
     themes = list(update_themes(index=old_index, processed_paths=processed_paths, force=force))
     themes.extend(list(build_themes_index(paths=paths, ignore_paths=processed_paths)))
-    new_index = dict(
-        version=INDEX_VERSION,
-        themes=[v._asdict() for v in themes],
-    )
-    with open(output, 'w') as stream:
-        json.dump(new_index, stream, ensure_ascii=False)
+    write_index(themes=themes, output=output)
 
 
 def update_themes(index, processed_paths, force):

@@ -17,6 +17,7 @@ from sigame_tools.common import (
     THEME_MEDATA_FIELDS,
     get_content,
     read_index,
+    write_index,
 )
 
 from sigame_tools.filters import (
@@ -42,31 +43,35 @@ from sigame_tools.filters import (
 @click.option('--unique_right_answers', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--obfuscate', type=click.Choice(('true', 'false')), default='false', show_default=True)
 @click.option('--unify_price', type=click.Choice(('true', 'false')), default='true', show_default=True)
+@click.option('--output_index', type=str, default=None)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
-         unique_right_answers, obfuscate, unify_price, **kwargs):
+         unique_right_answers, obfuscate, unify_price, output_index, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
     assert min_questions_per_theme <= max_questions_per_theme
     random.seed(random_seed)
+    rounds = tuple(generate_rounds(
+        metadata=read_index(index_path).themes,
+        rounds=rounds,
+        themes_per_round=themes_per_round,
+        min_questions_per_theme=min_questions_per_theme,
+        max_questions_per_theme=max_questions_per_theme,
+        filter_f=make_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
+        is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
+        use_unique_theme_names=unique_theme_names == 'true',
+        use_unique_right_answers=unique_right_answers == 'true',
+    ))
     generate_package(
         name=package_name,
         output=output,
         use_obfuscation=obfuscate == 'true',
         use_unified_price=unify_price == 'true',
-        rounds=generate_rounds(
-            metadata=read_index(index_path).themes,
-            rounds=rounds,
-            themes_per_round=themes_per_round,
-            min_questions_per_theme=min_questions_per_theme,
-            max_questions_per_theme=max_questions_per_theme,
-            filter_f=make_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
-            is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
-            use_unique_theme_names=unique_theme_names == 'true',
-            use_unique_right_answers=unique_right_answers == 'true',
-        ),
+        rounds=rounds,
     )
+    if output_index:
+        write_index(themes=(w for v in rounds for w in v.themes), output=output_index)
 
 
 def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,

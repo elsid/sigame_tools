@@ -171,3 +171,12 @@ def get_base64_encoded_right_answers(theme):
 
 def get_atom_num(theme, atom_type):
     return sum(1 for v in theme.iter('atom') if v.attrib.get('type') == atom_type)
+
+
+def write_index(themes, output):
+    index = dict(
+        version=INDEX_VERSION,
+        themes=[v._asdict() for v in themes],
+    )
+    with open(output, 'w') as stream:
+        json.dump(index, stream, ensure_ascii=False)
