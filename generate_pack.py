@@ -171,7 +171,8 @@ def generate_package(name, output, rounds):
 
 
 def copy_files(dst_siq, files):
-    for path, path_files in files.items():
+    for path in sorted(files.keys()):
+        path_files = sorted(files[path])
         print(f'Copy files from {path}...')
         with zipfile.ZipFile(path) as src_siq:
             src_siq_file_paths = {urllib.parse.unquote(v): v for v in src_siq.namelist()}
@@ -233,10 +234,12 @@ def generate_content(name, rounds):
             questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
             theme_element.append(lxml.etree.fromstring(questions_xml))
             for author in theme_authors_element:
+                if not author.text:
+                    continue
                 if author.text not in authors:
                     authors[author.text] = set()
                 authors[author.text].add(theme.package_name)
-    for author in authors.keys():
+    for author in sorted(authors.keys()):
         authors_and_roles = f'{author} ({", ".join(sorted(authors[author]))})'
         lxml.etree.SubElement(authors_element, 'author', attrib=dict()).text = authors_and_roles
     return lxml.etree.ElementTree(package_element), files
