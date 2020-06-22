@@ -7,6 +7,7 @@ import lxml.etree
 import math
 import os.path
 import random
+import string
 import urllib.parse
 import uuid
 import xml.etree.ElementTree
@@ -39,9 +40,10 @@ from sigame_tools.filters import (
 @click.option('--package_name', type=str, default='Generated pack')
 @click.option('--unique_theme_names', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--unique_right_answers', type=click.Choice(('true', 'false')), default='true', show_default=True)
+@click.option('--obfuscate', type=click.Choice(('true', 'false')), default='false', show_default=True)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
-         unique_right_answers, **kwargs):
+         unique_right_answers, obfuscate, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
@@ -50,6 +52,7 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
     generate_package(
         name=package_name,
         output=output,
+        use_obfuscation=obfuscate == 'true',
         rounds=generate_rounds(
             metadata=read_index(index_path).themes,
             rounds=rounds,
@@ -170,8 +173,8 @@ def filter_themes(metadata, is_proper_theme, is_high_priority):
     return available, high_priority
 
 
-def generate_package(name, output, rounds):
-    content, files = generate_content(name=name, rounds=rounds)
+def generate_package(name, output, rounds, use_obfuscation):
+    content, files = generate_content(name=name, rounds=rounds, use_obfuscation=use_obfuscation)
     with zipfile.ZipFile(output, 'w') as siq:
         for path, data in CONST_FILES:
             write_siq_file(siq=siq, path=path, data=data.encode('utf-8'))
@@ -213,7 +216,7 @@ def read_siq_file(siq, path):
         return stream.read()
 
 
-def generate_content(name, rounds):
+def generate_content(name, rounds, use_obfuscation):
     package_element = lxml.etree.Element('package', attrib=dict(
         name=name,
         version='4',
@@ -240,6 +243,12 @@ def generate_content(name, rounds):
                     file_name = f'{str(uuid.uuid1())}.{extension}'
                     files[theme.path].add((atom_type, atom.text[1:], file_name, theme.id))
                     atom.text = f'@{file_name}'
+                elif atom_type is None and atom.text and use_obfuscation:
+                    atom.text = obfuscate(atom.text)
+            if use_obfuscation:
+                for answer in questions_element.iter('answer'):
+                    if answer.text:
+                        answer.text = obfuscate(answer.text)
             questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
             theme_element.append(lxml.etree.fromstring(questions_xml))
             for author in theme_authors_element:
@@ -252,6 +261,17 @@ def generate_content(name, rounds):
         authors_and_roles = f'{author} ({", ".join(sorted(authors[author]))})'
         lxml.etree.SubElement(authors_element, 'author', attrib=dict()).text = authors_and_roles
     return lxml.etree.ElementTree(package_element), files
+
+
+def obfuscate(text):
+    result = str()
+    for symbol in text:
+        if symbol.isalnum():
+            symbol = random.choice(string.ascii_uppercase if symbol.isupper() else string.ascii_lowercase)
+        elif symbol.isnumeric():
+            symbol = str(random.randint(1, 9))
+        result += symbol
+    return result
 
 
 def get_round_attrib(round_):
