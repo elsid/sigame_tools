@@ -41,9 +41,10 @@ from sigame_tools.filters import (
 @click.option('--unique_theme_names', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--unique_right_answers', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--obfuscate', type=click.Choice(('true', 'false')), default='false', show_default=True)
+@click.option('--unify_price', type=click.Choice(('true', 'false')), default='true', show_default=True)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
-         unique_right_answers, obfuscate, **kwargs):
+         unique_right_answers, obfuscate, unify_price, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
@@ -53,6 +54,7 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
         name=package_name,
         output=output,
         use_obfuscation=obfuscate == 'true',
+        use_unified_price=unify_price == 'true',
         rounds=generate_rounds(
             metadata=read_index(index_path).themes,
             rounds=rounds,
@@ -173,8 +175,13 @@ def filter_themes(metadata, is_proper_theme, is_high_priority):
     return available, high_priority
 
 
-def generate_package(name, output, rounds, use_obfuscation):
-    content, files = generate_content(name=name, rounds=rounds, use_obfuscation=use_obfuscation)
+def generate_package(name, output, rounds, use_obfuscation, use_unified_price):
+    content, files = generate_content(
+        name=name,
+        rounds=rounds,
+        use_obfuscation=use_obfuscation,
+        use_unified_price=use_unified_price,
+    )
     with zipfile.ZipFile(output, 'w') as siq:
         for path, data in CONST_FILES:
             write_siq_file(siq=siq, path=path, data=data.encode('utf-8'))
@@ -216,14 +223,14 @@ def read_siq_file(siq, path):
         return stream.read()
 
 
-def generate_content(name, rounds, use_obfuscation):
+def generate_content(name, rounds, use_obfuscation, use_unified_price):
     package_element = lxml.etree.Element('package', attrib=dict(
         name=name,
         version='4',
         id=str(uuid.uuid1()),
         date=datetime.datetime.now().strftime(r'%d.%m.%Y'),
         difficutly='5',
-        xmlns="http://vladimirkhil.com/ygpackage3.0.xsd",
+        xmlns='http://vladimirkhil.com/ygpackage3.0.xsd',
     ))
     info_element = lxml.etree.SubElement(package_element, 'info', attrib=dict())
     authors_element = lxml.etree.SubElement(info_element, 'authors', attrib=dict())
@@ -249,6 +256,14 @@ def generate_content(name, rounds, use_obfuscation):
                 for answer in questions_element.iter('answer'):
                     if answer.text:
                         answer.text = obfuscate(answer.text)
+            if use_unified_price:
+                if round_.type is None:
+                    num = sum(1 for _ in questions_element.iter('question'))
+                    for question, price in zip(questions_element.iter('question'), get_prices(num)):
+                        question.attrib['price'] = str(price)
+                elif round_.type == 'final':
+                    for question in questions_element.iter('question'):
+                        question.attrib['price'] = '0'
             questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
             theme_element.append(lxml.etree.fromstring(questions_xml))
             for author in theme_authors_element:
@@ -311,6 +326,23 @@ def get_question(content, metadata):
                 continue
             for questions in theme.iter('questions'):
                 return questions
+
+
+def get_prices(num, max_price=1000):
+    if num == 0:
+        return
+    base = max_price // (int(math.ceil(num / 10)) * 10)
+    if num % 10 == 0:
+        for i in range(1, num + 1):
+            yield i * base
+        return
+    half_price = max_price // 2
+    for i in range(num // 2, 0, -1):
+        yield half_price - i * base
+    if num % 2 == 1:
+        yield half_price
+    for i in range(1, num // 2 + 1):
+        yield half_price + i * base
 
 
 CONTENT_TYPES = (
