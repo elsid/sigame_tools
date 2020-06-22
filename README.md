@@ -2,6 +2,11 @@
 
 A collection of scripts to manipulate with [SIGame](https://vladimirkhil.com/si/game) packages.
 
+## Dependencies
+
+* Python >= 3.6
+* PyPI packages from [requirements.txt](requirements.txt)
+
 ## Download packages from vk group
 
 [download_vk_packs.py](download_vk_packs.py) allows to download packages present on

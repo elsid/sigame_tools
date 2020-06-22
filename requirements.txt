@@ -1,0 +1,8 @@
+deepdiff==4.3.2
+pytest==5.4.3
+requests==2.18.4
+pyquery==1.4.1
+lxml==4.5.1
+defusedxml==0.6.0
+retry==0.9.2
+click==6.7
