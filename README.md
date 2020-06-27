@@ -93,7 +93,7 @@ Will update information for all themes in `index.json` and write into `new_index
 
 ## Generate package
 
-[generate_pack.py](generate_pack.py) generates a new SIGame package by sampling themes
+[generate_random_pack.py](generate_random_pack.py) generates a new SIGame package by sampling themes
 from a given index. Themes can belong to different packages.
 Each round will contain the same number of questions for each theme.
 Themes are not duplicated. All required media files are copied into a new package from all sources.
@@ -147,7 +147,7 @@ will filter out `physics` and `mathematics`.
 ### Usage example
 
 ```bash
-./generate_pack.py \
+./generate_random_pack.py \
     --index_path index.json \
     --rounds=3 \
     --themes_per_round=10 \
