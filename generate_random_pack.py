@@ -239,8 +239,8 @@ def generate_content_xml(name, rounds, use_obfuscation, use_unified_price):
         themes_element = lxml.etree.SubElement(round_element, 'themes', attrib=dict())
         for theme in round_.themes:
             theme_element = lxml.etree.SubElement(themes_element, 'theme', attrib=dict(name=theme.theme_name))
-            questions_element, theme_authors_element = read_questions_and_authors(theme)
-            for atom in questions_element.iter('atom'):
+            theme_theme_element, theme_authors_element = read_theme_and_authors(theme)
+            for atom in theme_theme_element.iter('atom'):
                 atom_type = atom.attrib.get('type')
                 if atom_type and atom.text and atom.text.startswith('@'):
                     extension = atom.text.rsplit('.', 1)[-1]
@@ -250,19 +250,19 @@ def generate_content_xml(name, rounds, use_obfuscation, use_unified_price):
                 elif atom_type is None and atom.text and use_obfuscation:
                     atom.text = obfuscate(atom.text)
             if use_obfuscation:
-                for answer in questions_element.iter('answer'):
+                for answer in theme_theme_element.iter('answer'):
                     if answer.text:
                         answer.text = obfuscate(answer.text)
             if use_unified_price:
                 if round_.type is None:
-                    num = sum(1 for _ in questions_element.iter('question'))
-                    for question, price in zip(questions_element.iter('question'), get_prices(num)):
+                    num = sum(1 for _ in theme_theme_element.iter('question'))
+                    for question, price in zip(theme_theme_element.iter('question'), get_prices(num)):
                         question.attrib['price'] = str(price)
                 elif round_.type == 'final':
-                    for question in questions_element.iter('question'):
+                    for question in theme_theme_element.iter('question'):
                         question.attrib['price'] = '0'
-            questions_xml = xml.etree.ElementTree.tostring(questions_element, encoding='utf-8')
-            theme_element.append(lxml.etree.fromstring(questions_xml))
+            theme_theme_xml = xml.etree.ElementTree.tostring(theme_theme_element, encoding='utf-8')
+            theme_element.extend(lxml.etree.fromstring(theme_theme_xml))
             for author in theme_authors_element:
                 if not author.text:
                     continue
@@ -293,11 +293,11 @@ def get_round_attrib(round_):
     return attrib
 
 
-def read_questions_and_authors(metadata):
+def read_theme_and_authors(metadata):
     with zipfile.ZipFile(metadata.path) as siq:
         content = get_content(siq)
         return (
-            get_question(content=content, metadata=metadata),
+            get_theme(content=content, metadata=metadata),
             get_authors(content)
         )
 
@@ -306,7 +306,7 @@ def get_authors(content):
     yield from content.iter('author')
 
 
-def get_question(content, metadata):
+def get_theme(content, metadata):
     round_number = 0
     for round_ in content.iter('round'):
         round_number += 1
@@ -321,8 +321,7 @@ def get_question(content, metadata):
                 continue
             if theme_number != metadata.theme_number:
                 continue
-            for questions in theme.iter('questions'):
-                return questions
+            return theme
 
 
 Round = collections.namedtuple('Round', (
