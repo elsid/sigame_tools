@@ -118,7 +118,7 @@ def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
         else:
             round_name = f'Round {round_number}'
             round_type = None
-            high_priority_num = min(int(math.ceil(themes_per_round / (rounds - 1))), themes_per_round)
+            high_priority_num = min(int(round(themes_per_round / (rounds - 1))), themes_per_round)
         print(f'Generate {round_type or "normal"} round {round_number}: {len(high_priority[round_type])}'
               + f' high priority and {len(available[round_type])} regular themes are available...')
         questions_nums = list(range(min_questions_per_theme, max_questions_per_theme + 1))
