@@ -165,3 +165,31 @@ Will generate a new pack file with 3 rounds each containing 10 themes. Each them
 2. Also include from these and other packages all themes with a name containing
    `[Mm]echanics` (`Quantum Mechanics` from `Physics Pack.siq` and `Classical mechanics` form `Mechanics.siq` are included).
 3. But exclude all themes containing `Quantum` (`Quantum Mechanics` is excluded).
+
+## Generate package to answer about media content
+
+[generate_answer_media_pack.py](generate_answer_media_pack.py) generates a new SIGame package containing single theme
+using media files of a given type and file names as answers.
+
+### Usage example
+
+Assuming there a directory `cats` with files:
+```
+$ ls cats/*
+cats/Himalayan.png  cats/Munchkin.png  cats/Persian.png
+```
+
+```bash
+./generate_answer_media_pack.py \
+    --package_name='Cats' \
+    --round_name='Cats' \
+    --theme_name='Cat breeds' \
+    --media_path=cats/*.png \
+    --media_type=image \
+    --comment='Name cat breed' \
+    --output=cats.siq
+```
+
+Will create a package containing given files and questions with images of cats
+and answer for each image excluding file extension and directory from file name:
+`Himalayan`, `Munchkin`, `Persian`.

@@ -9,7 +9,7 @@ from sigame_tools.common import (
 
 
 @click.command()
-@click.option('--output', type=str, required=True)
+@click.option('--output', type=click.Path(), required=True)
 @click.argument('paths', nargs=-1, type=str, required=True)
 def main(output, paths):
     write_index(themes=build_themes_index(paths), output=output)

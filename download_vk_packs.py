@@ -23,7 +23,7 @@ from sigame_tools.common import (
 @click.option('--pages', type=int, default=1)
 @click.option('--vk_group_url', type=str, default='https://m.vk.com/topic-135725718_34975471')
 @click.option('--user_agent', type=str, default='Mozilla/5.0 (iPhone; CPU OS 13_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/26.0 Mobile/15E148 Safari/605.1.15')
-@click.option('--cache_dir', type=str, required=True)
+@click.option('--cache_dir', type=click.Path(file_okay=False), required=True)
 @click.option('--speed_limit', type=float, default=None)
 def main(offset, pages, vk_group_url, user_agent, cache_dir, speed_limit):
     download_files(

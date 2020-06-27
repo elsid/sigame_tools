@@ -3,18 +3,42 @@ import click
 import collections
 import defusedxml.ElementTree
 import json
+import math
 import os.path
 import uuid
 import zipfile
 
 INDEX_VERSION=3
 
+CONTENT_TYPES = (
+    r'<?xml version="1.0" encoding="utf-8"?>'
+    + r'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + r'<Default Extension="xml" ContentType="si/xml" />'
+    + r'</Types>'
+)
+
+TEXTS_AUTHORS = r'<?xml version="1.0" encoding="utf-8"?><Authors />'
+
+TEXTS_SOURCES = r'<?xml version="1.0" encoding="utf-8"?><Sources />'
+
+CONST_FILES = (
+    ('[Content_Types].xml', CONTENT_TYPES),
+    ('Texts/authors.xml', TEXTS_AUTHORS),
+    ('Texts/sources.xml', TEXTS_SOURCES),
+)
+
+SIQ_FILE_TYPE_DIRS = dict(
+    image='Images',
+    video='Video',
+    voice='Audio',
+)
+
 Index = collections.namedtuple('Index', (
     'version',
     'themes',
 ))
 
-THEME_MEDATA_FIELDS = collections.OrderedDict(
+THEME_METADATA_FIELDS = collections.OrderedDict(
     id=str,
     round_number=int,
     theme_number=int,
@@ -32,7 +56,7 @@ THEME_MEDATA_FIELDS = collections.OrderedDict(
     voices_num=int,
 )
 
-ThemeMetadata = collections.namedtuple('ThemeMetadata', tuple(THEME_MEDATA_FIELDS.keys()))
+ThemeMetadata = collections.namedtuple('ThemeMetadata', tuple(THEME_METADATA_FIELDS.keys()))
 
 
 def read_content(path):
@@ -180,3 +204,40 @@ def write_index(themes, output):
     )
     with open(output, 'w') as stream:
         json.dump(index, stream, ensure_ascii=False)
+
+
+def get_prices(num, max_price=1000):
+    if num == 0:
+        return
+    base = max_price // (int(math.ceil(num / 10)) * 10)
+    if num % 10 == 0:
+        for i in range(1, num + 1):
+            yield i * base
+        return
+    half_price = max_price // 2
+    for i in range(num // 2, 0, -1):
+        yield half_price - i * base
+    if num % 2 == 1:
+        yield half_price
+    for i in range(1, num // 2 + 1):
+        yield half_price + i * base
+
+
+def write_siq_const_files(siq):
+    for path, data in CONST_FILES:
+        write_siq_file(siq=siq, path=path, data=data.encode('utf-8'))
+
+
+def write_siq_file(siq, path, data):
+    with siq.open(path, 'w') as stream:
+        stream.write(data)
+
+
+def write_content_xml(siq, content_xml):
+    with siq.open('content.xml', 'w') as stream:
+        content_xml.write(stream, xml_declaration=True, encoding='utf-8')
+
+
+def read_binary_file(path):
+    with open(path, 'rb') as stream:
+        return stream.read()

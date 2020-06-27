@@ -14,10 +14,15 @@ import xml.etree.ElementTree
 import zipfile
 
 from sigame_tools.common import (
-    THEME_MEDATA_FIELDS,
+    SIQ_FILE_TYPE_DIRS,
+    THEME_METADATA_FIELDS,
     get_content,
+    get_prices,
     read_index,
+    write_content_xml,
     write_index,
+    write_siq_const_files,
+    write_siq_file,
 )
 
 from sigame_tools.filters import (
@@ -27,8 +32,8 @@ from sigame_tools.filters import (
 
 
 @click.command()
-@click.option('--index_path', type=click.Path(), required=True)
-@click.option('--output', type=str, required=True)
+@click.option('--index_path', type=click.Path(exists=True, dir_okay=False), required=True)
+@click.option('--output', type=click.Path(), required=True)
 @click.option('--rounds', type=int, default=3, show_default=True)
 @click.option('--themes_per_round', type=int, default=3, show_default=True)
 @click.option('--min_questions_per_theme', type=int, default=5, show_default=True)
@@ -43,7 +48,7 @@ from sigame_tools.filters import (
 @click.option('--unique_right_answers', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--obfuscate', type=click.Choice(('true', 'false')), default='false', show_default=True)
 @click.option('--unify_price', type=click.Choice(('true', 'false')), default='true', show_default=True)
-@click.option('--output_index', type=str, default=None)
+@click.option('--output_index', type=click.Path(), default=None)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
          unique_right_answers, obfuscate, unify_price, output_index, **kwargs):
@@ -58,17 +63,21 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
         themes_per_round=themes_per_round,
         min_questions_per_theme=min_questions_per_theme,
         max_questions_per_theme=max_questions_per_theme,
-        filter_f=make_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
-        is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_MEDATA_FIELDS),
+        filter_f=make_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
+        is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
         use_unique_theme_names=unique_theme_names == 'true',
         use_unique_right_answers=unique_right_answers == 'true',
     ))
-    generate_package(
+    content_xml, files = generate_content_xml(
         name=package_name,
-        output=output,
+        rounds=rounds,
         use_obfuscation=obfuscate == 'true',
         use_unified_price=unify_price == 'true',
-        rounds=rounds,
+    )
+    write_package(
+        content_xml=content_xml,
+        files=files,
+        output=output,
     )
     if output_index:
         write_index(themes=(w for v in rounds for w in v.themes), output=output_index)
@@ -180,21 +189,14 @@ def filter_themes(metadata, is_proper_theme, is_high_priority):
     return available, high_priority
 
 
-def generate_package(name, output, rounds, use_obfuscation, use_unified_price):
-    content, files = generate_content(
-        name=name,
-        rounds=rounds,
-        use_obfuscation=use_obfuscation,
-        use_unified_price=use_unified_price,
-    )
+def write_package(content_xml, files, output):
     with zipfile.ZipFile(output, 'w') as siq:
-        for path, data in CONST_FILES:
-            write_siq_file(siq=siq, path=path, data=data.encode('utf-8'))
-        write_content(siq=siq, content=content)
-        copy_files(dst_siq=siq, files=files)
+        write_siq_const_files(siq)
+        write_content_xml(siq=siq, content_xml=content_xml)
+        copy_files_from_siq(dst_siq=siq, files=files)
 
 
-def copy_files(dst_siq, files):
+def copy_files_from_siq(dst_siq, files):
     for path in sorted(files.keys()):
         path_files = sorted(files[path])
         print(f'Copy files from {path}...')
@@ -213,22 +215,12 @@ def copy_files(dst_siq, files):
                 write_siq_file(siq=dst_siq, path=dst_file_path, data=data)
 
 
-def write_content(siq, content):
-    with siq.open('content.xml', 'w') as stream:
-        content.write(stream, xml_declaration=True, encoding='utf-8')
-
-
-def write_siq_file(siq, path, data):
-    with siq.open(path, 'w') as stream:
-        stream.write(data)
-
-
 def read_siq_file(siq, path):
     with siq.open(path) as stream:
         return stream.read()
 
 
-def generate_content(name, rounds, use_obfuscation, use_unified_price):
+def generate_content_xml(name, rounds, use_obfuscation, use_unified_price):
     package_element = lxml.etree.Element('package', attrib=dict(
         name=name,
         version='4',
@@ -332,46 +324,6 @@ def get_question(content, metadata):
             for questions in theme.iter('questions'):
                 return questions
 
-
-def get_prices(num, max_price=1000):
-    if num == 0:
-        return
-    base = max_price // (int(math.ceil(num / 10)) * 10)
-    if num % 10 == 0:
-        for i in range(1, num + 1):
-            yield i * base
-        return
-    half_price = max_price // 2
-    for i in range(num // 2, 0, -1):
-        yield half_price - i * base
-    if num % 2 == 1:
-        yield half_price
-    for i in range(1, num // 2 + 1):
-        yield half_price + i * base
-
-
-CONTENT_TYPES = (
-    r'<?xml version="1.0" encoding="utf-8"?>'
-    + r'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-    + r'<Default Extension="xml" ContentType="si/xml" />'
-    + r'</Types>'
-)
-
-TEXTS_AUTHORS = r'<?xml version="1.0" encoding="utf-8"?><Authors />'
-
-TEXTS_SOURCES = r'<?xml version="1.0" encoding="utf-8"?><Sources />'
-
-CONST_FILES = (
-    ('[Content_Types].xml', CONTENT_TYPES),
-    ('Texts/authors.xml', TEXTS_AUTHORS),
-    ('Texts/sources.xml', TEXTS_SOURCES),
-)
-
-SIQ_FILE_TYPE_DIRS = dict(
-    image='Images',
-    video='Video',
-    voice='Audio',
-)
 
 Round = collections.namedtuple('Round', (
     'name',
