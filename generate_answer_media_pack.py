@@ -29,7 +29,7 @@ from sigame_tools.common import (
 @click.option('--theme_name', type=str, required=True)
 @click.option('--output', type=click.Path(), required=True)
 @click.option('--media_path', type=click.Path(), required=True)
-@click.option('--media_type', type=click.Choice(('image', 'video', 'voice')), required=True)
+@click.option('--media_type', type=click.Choice(('image', 'video', 'voice', 'text')), required=True)
 @click.option('--question_suffix', type=str, default='question',
               help='File name suffix like answer.suffix.ext to be used as question.'
                    + 'Then file name like answer.ext will be used as answer.')
@@ -73,17 +73,30 @@ def generate_questions(media_path, media_type, question_suffix):
     for answer, path in sorted(answers.items()):
         question_element = lxml.etree.SubElement(questions_element, 'question', attrib=dict(price='100'))
         scenario_element = lxml.etree.SubElement(question_element, 'scenario', attrib=dict())
-        atom_question_element = lxml.etree.SubElement(scenario_element, 'atom', attrib=dict(type=media_type))
-        atom_question_element.text = f'@{os.path.basename(path)}'
+        atom_question_element = lxml.etree.SubElement(scenario_element, 'atom', attrib=get_media_type_attrib(media_type))
+        atom_question_element.text = get_media_text(media_type=media_type, path=path)
         answer_path = get_answer_path(path=path, question_suffix=question_suffix)
         if answer_path is not None and os.path.exists(answer_path):
             lxml.etree.SubElement(scenario_element, 'atom', attrib=dict(type='marker'))
-            atom_answer_element = lxml.etree.SubElement(scenario_element, 'atom', attrib=dict(type=media_type))
-            atom_answer_element.text = f'@{os.path.basename(answer_path)}'
+            atom_answer_element = lxml.etree.SubElement(scenario_element, 'atom', attrib=get_media_type_attrib(media_type))
+            atom_answer_element.text = get_media_text(media_type=media_type, path=answer_path)
         right_element = lxml.etree.SubElement(question_element, 'right', attrib=dict())
         answer_element = lxml.etree.SubElement(right_element, 'answer', attrib=dict())
         answer_element.text = answer
     return questions_element, file_paths
+
+
+def get_media_type_attrib(media_type):
+    if media_type == 'text':
+        return dict()
+    return dict(type=media_type)
+
+
+def get_media_text(media_type, path):
+    if media_type == 'text':
+        with open(path) as stream:
+            return stream.read()
+    return f'@{os.path.basename(path)}'
 
 
 def get_answer_path(path, question_suffix):
@@ -124,7 +137,8 @@ def write_package(content_xml, file_paths, media_type, output):
     with zipfile.ZipFile(output, 'w') as siq:
         write_siq_const_files(siq)
         write_content_xml(siq=siq, content_xml=content_xml)
-        copy_files(dst_siq=siq, file_paths=file_paths, media_type=media_type)
+        if media_type != 'text':
+            copy_files(dst_siq=siq, file_paths=file_paths, media_type=media_type)
 
 
 def copy_files(dst_siq, file_paths, media_type):
