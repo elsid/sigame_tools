@@ -6,6 +6,7 @@ import datetime
 import glob
 import lxml.etree
 import os.path
+import urllib.parse
 import uuid
 import zipfile
 
@@ -144,7 +145,7 @@ def write_package(content_xml, file_paths, media_type, output):
 def copy_files(dst_siq, file_paths, media_type):
     for src_path in file_paths:
         file_dir = SIQ_FILE_TYPE_DIRS[media_type]
-        dst_path = os.path.join(file_dir, os.path.basename(src_path))
+        dst_path = os.path.join(file_dir, urllib.parse.quote(os.path.basename(src_path)))
         write_siq_file(siq=dst_siq, path=dst_path, data=read_binary_file(src_path))
 
 
