@@ -54,24 +54,26 @@ from sigame_tools.filters import (
 @click.option('--unify_price', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--shuffle', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--check_right_answers_similarity', type=click.Choice(('true', 'false')), default='true', show_default=True)
+@click.option('--exclude_index_path', type=click.Path(exists=True, dir_okay=False), multiple=True)
 @click.option('--output_index', type=click.Path(), default=None)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
          unique_right_answers, obfuscate, unify_price, shuffle, check_right_answers_similarity,
-         output_index, **kwargs):
+         exclude_index_path, output_index, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
     assert min_questions_per_theme <= max_questions_per_theme
     random.seed(random_seed)
+    filters = tuple(list(kwargs['filter']) + list(exclude_by_indices(exclude_index_path)))
     rounds = generate_rounds(
         metadata=read_index(index_path).themes,
         rounds_number=rounds,
         themes_per_round=themes_per_round,
         min_questions_per_theme=min_questions_per_theme,
         max_questions_per_theme=max_questions_per_theme,
-        filter_f=make_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
-        is_preferred=make_preferred_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
+        filter_f=make_filter(args=filters, types=THEME_METADATA_FIELDS),
+        is_preferred=make_preferred_filter(args=filters, types=THEME_METADATA_FIELDS),
         use_unique_theme_names=unique_theme_names == 'true',
         use_unique_right_answers=unique_right_answers == 'true',
         shuffle=shuffle == 'true',
@@ -90,6 +92,16 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
     )
     if output_index:
         write_index(themes=(w for v in rounds for w in v.themes), output=output_index)
+
+
+def exclude_by_indices(paths):
+    for path in paths:
+        yield from exclude_by_index(read_index(path))
+
+
+def exclude_by_index(index):
+    for theme in index.themes:
+        yield 'exclude', 'id', theme.id
 
 
 def generate_rounds(metadata, rounds_number, themes_per_round, min_questions_per_theme,
