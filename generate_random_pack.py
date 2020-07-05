@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import Levenshtein
 import base64
 import click
 import collections
@@ -52,10 +53,12 @@ from sigame_tools.filters import (
 @click.option('--obfuscate', type=click.Choice(('true', 'false')), default='false', show_default=True)
 @click.option('--unify_price', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--shuffle', type=click.Choice(('true', 'false')), default='true', show_default=True)
+@click.option('--check_right_answers_similarity', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--output_index', type=click.Path(), default=None)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
-         unique_right_answers, obfuscate, unify_price, shuffle, output_index, **kwargs):
+         unique_right_answers, obfuscate, unify_price, shuffle, check_right_answers_similarity,
+         output_index, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
@@ -72,6 +75,7 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
         use_unique_theme_names=unique_theme_names == 'true',
         use_unique_right_answers=unique_right_answers == 'true',
         shuffle=shuffle == 'true',
+        check_right_answers_similarity=check_right_answers_similarity == 'true',
     )
     content_xml, files = generate_content_xml(
         name=package_name,
@@ -90,7 +94,7 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
 
 def generate_rounds(metadata, rounds_number, themes_per_round, min_questions_per_theme,
                     max_questions_per_theme, filter_f, is_preferred, use_unique_theme_names,
-                    use_unique_right_answers, shuffle):
+                    use_unique_right_answers, shuffle, check_right_answers_similarity):
     print(f'Generate rounds from {len(metadata)} themes...')
     def is_acceptable(theme):
         if theme.round_type is None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
@@ -117,6 +121,7 @@ def generate_rounds(metadata, rounds_number, themes_per_round, min_questions_per
     is_used = make_filter_used_by(
         used_theme_names=used_theme_names,
         used_right_answers=used_right_answers,
+        check_right_answers_similarity=check_right_answers_similarity,
     )
     populate_rounds(
         rounds=rounds,
@@ -304,14 +309,31 @@ def get_unique_samples(number, is_used, themes, used_theme_names, used_right_ans
     return selected
 
 
-def make_filter_used_by(used_theme_names, used_right_answers):
+def make_filter_used_by(used_theme_names, used_right_answers, check_right_answers_similarity):
     def impl(theme):
         if used_theme_names is not None and theme.theme_name.strip() in used_theme_names:
             return True
-        if used_right_answers is not None and used_right_answers.intersection(decode_right_answers(theme.base64_encoded_right_answers)):
-            return True
+        if used_right_answers is not None:
+            right_answers = decode_right_answers(theme.base64_encoded_right_answers)
+            if used_right_answers.intersection(right_answers):
+                return True
+            if check_right_answers_similarity:
+                for answer in right_answers:
+                    if contains_similar(values=used_right_answers, target=answer):
+                        return True
         return False
     return impl
+
+
+def contains_similar(values, target):
+    if len(target) < 5:
+        return False
+    target = target.lower()
+    for value in values:
+        value = value.lower()
+        if Levenshtein.distance(target, value) <= max(1, max(len(target), len(value)) // 10):
+            return True
+    return False
 
 
 def prepare_themes(metadata, is_acceptable, is_preferred):
