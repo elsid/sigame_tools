@@ -87,9 +87,9 @@ def test_filter_exclude_by_list_item():
     assert list(filter(f, values)) == filtered
 
 
-def test_filter_force_include_by_int():
+def test_filter_prefer_by_int():
     f = make_filter(
-        args=[('force_include', 'i', 42)],
+        args=[('prefer', 'i', 42)],
         types=TYPES,
     )
     values = [Value(i=42, s='a', l=['x'])]

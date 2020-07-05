@@ -2,8 +2,8 @@ import re
 import collections
 
 
-def make_high_priority_filter(args, types):
-    args = [v for v in args if v[0] == 'force_include']
+def make_preferred_filter(args, types):
+    args = [v for v in args if v[0] == 'prefer']
     if not args:
         return lambda _: False
     return make_filter(args=args, types=types)
@@ -12,10 +12,10 @@ def make_high_priority_filter(args, types):
 def make_filter(args, types):
     filters = list()
     for filter_type, field, pattern in args:
-        assert filter_type in ('include', 'exclude', 'force_include')
+        assert filter_type in ('include', 'exclude', 'prefer')
         field_filter = make_typed_field_filter(field_type=types[field], pattern=pattern)
         if field_filter:
-            filters.append(('include' in filter_type, field, field_filter))
+            filters.append((filter_type in ('include', 'prefer'), field, field_filter))
     if not filters:
         return lambda _: True
     def impl(value):

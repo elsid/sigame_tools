@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import click
 import collections
 import datetime
@@ -16,6 +17,8 @@ import zipfile
 from sigame_tools.common import (
     SIQ_FILE_TYPE_DIRS,
     THEME_METADATA_FIELDS,
+    ThemeMetadata,
+    decode_answer,
     get_content,
     get_prices,
     read_index,
@@ -27,7 +30,7 @@ from sigame_tools.common import (
 
 from sigame_tools.filters import (
     make_filter,
-    make_high_priority_filter,
+    make_preferred_filter,
 )
 
 
@@ -39,8 +42,8 @@ from sigame_tools.filters import (
 @click.option('--min_questions_per_theme', type=int, default=5, show_default=True)
 @click.option('--max_questions_per_theme', type=int, default=10, show_default=True)
 @click.option('--filter', type=str, nargs=3, multiple=True,
-              help='Triple of <force_include|include|exclude> <field> <pattern> that is used'
-                   ' to filter in or out themes applying conditions in a given order. force_include'
+              help='Triple of <prefer|include|exclude> <field> <pattern> that is used'
+                   ' to filter in or out themes applying conditions in a given order. prefer'
                    ' will put themes into package with higher priority that include.')
 @click.option('--random_seed', type=int, default=None)
 @click.option('--package_name', type=str, default='Generated pack')
@@ -48,26 +51,28 @@ from sigame_tools.filters import (
 @click.option('--unique_right_answers', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--obfuscate', type=click.Choice(('true', 'false')), default='false', show_default=True)
 @click.option('--unify_price', type=click.Choice(('true', 'false')), default='true', show_default=True)
+@click.option('--shuffle', type=click.Choice(('true', 'false')), default='true', show_default=True)
 @click.option('--output_index', type=click.Path(), default=None)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
-         unique_right_answers, obfuscate, unify_price, output_index, **kwargs):
+         unique_right_answers, obfuscate, unify_price, shuffle, output_index, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
     assert min_questions_per_theme <= max_questions_per_theme
     random.seed(random_seed)
-    rounds = tuple(generate_rounds(
+    rounds = generate_rounds(
         metadata=read_index(index_path).themes,
-        rounds=rounds,
+        rounds_number=rounds,
         themes_per_round=themes_per_round,
         min_questions_per_theme=min_questions_per_theme,
         max_questions_per_theme=max_questions_per_theme,
         filter_f=make_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
-        is_high_priority=make_high_priority_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
+        is_preferred=make_preferred_filter(args=kwargs['filter'], types=THEME_METADATA_FIELDS),
         use_unique_theme_names=unique_theme_names == 'true',
         use_unique_right_answers=unique_right_answers == 'true',
-    ))
+        shuffle=shuffle == 'true',
+    )
     content_xml, files = generate_content_xml(
         name=package_name,
         rounds=rounds,
@@ -83,110 +88,250 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
         write_index(themes=(w for v in rounds for w in v.themes), output=output_index)
 
 
-def generate_rounds(metadata, rounds, themes_per_round, min_questions_per_theme,
-                    max_questions_per_theme, filter_f, is_high_priority, use_unique_theme_names,
-                    use_unique_right_answers):
-    def is_proper_theme(theme):
-        if theme.round_type == None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
+def generate_rounds(metadata, rounds_number, themes_per_round, min_questions_per_theme,
+                    max_questions_per_theme, filter_f, is_preferred, use_unique_theme_names,
+                    use_unique_right_answers, shuffle):
+    print(f'Generate rounds from {len(metadata)} themes...')
+    def is_acceptable(theme):
+        if theme.round_type is None and not (min_questions_per_theme <= theme.questions_num <= max_questions_per_theme):
             return False
         return filter_f(theme)
-    available, high_priority = filter_themes(
+    accepted, preferred = prepare_themes(
         metadata=metadata,
-        is_proper_theme=is_proper_theme,
-        is_high_priority=is_high_priority,
+        is_acceptable=is_acceptable,
+        is_preferred=is_preferred,
     )
-    print(f'Generate rounds, filtered in {len(available[None]) + len(high_priority[None])} normal '
-          + f'{len(available["final"]) + len(high_priority["final"])} final and themes and out of {len(metadata)}...')
-    for round_type in (None, 'final'):
-        if len(available[round_type]) + len(high_priority[round_type]) == 0:
-            raise RuntimeError(f'No themes to generate {round_type or "normal"} rounds: all themes are filtered out')
-    used_theme_names = set()
-    used_right_answers = set()
-    filter_by_used = make_filter_used_by(
+    print(f"Got {sum_themes(preferred.get(None))} normal and {sum_themes(preferred.get('final'))} final preferred"
+          + f" and {sum_themes(accepted.get(None))} normal and {sum_themes(accepted.get('final'))} final accepted"
+          + ' themes')
+    rounds = tuple(make_rounds(rounds_number))
+    populate_rounds_with_preferred(
+        rounds=rounds,
+        themes_per_round=themes_per_round,
+        min_questions_per_theme=min_questions_per_theme,
+        max_questions_per_theme=max_questions_per_theme,
+        themes=preferred,
+    )
+    used_theme_names = get_theme_names(rounds) if use_unique_theme_names else None
+    used_right_answers = get_right_answers(rounds) if use_unique_right_answers else None
+    is_used = make_filter_used_by(
         used_theme_names=used_theme_names,
-        use_unique_theme_names=use_unique_theme_names,
         used_right_answers=used_right_answers,
-        use_unique_right_answers=use_unique_right_answers,
     )
-    for round_number in range(rounds):
-        if round_number == rounds - 1:
-            round_name = 'Final round'
-            round_type = 'final'
-            high_priority_num = themes_per_round
-            min_questions_per_theme = 1
-            max_questions_per_theme = 1
+    populate_rounds(
+        rounds=rounds,
+        themes_per_round=themes_per_round,
+        min_questions_per_theme=min_questions_per_theme,
+        max_questions_per_theme=max_questions_per_theme,
+        is_used=is_used,
+        themes=accepted,
+        used_theme_names=used_theme_names,
+        used_right_answers=used_right_answers,
+    )
+    if shuffle:
+        shuffle_themes(rounds)
+    return rounds
+
+
+def shuffle_themes(rounds):
+    themes = collections.defaultdict(list)
+    for round_ in rounds:
+        if round_.type != 'final':
+            themes[round_.themes[0].questions_num].extend(round_.themes)
+    for value in themes.values():
+        random.shuffle(value)
+    for round_ in rounds:
+        if round_.type != 'final':
+            number = len(round_.themes)
+            questions_num = round_.themes[0].questions_num
+            round_.themes.clear()
+            round_.themes.extend(themes[questions_num][-number:])
+            themes[questions_num] = themes[questions_num][:-number]
+
+
+def get_theme_names(rounds):
+    result = set()
+    for round_ in rounds:
+        result.update(get_themes_theme_names(round_.themes))
+    return result
+
+
+def get_themes_theme_names(themes):
+    result = set()
+    for theme in themes:
+        result.add(theme.theme_name.strip())
+    return result
+
+
+def get_right_answers(rounds):
+    result = set()
+    for round_ in rounds:
+        result.update(get_themes_right_answers(round_.themes))
+    return result
+
+
+def get_themes_right_answers(themes):
+    result = set()
+    for theme in themes:
+        result.update(decode_right_answers(theme.base64_encoded_right_answers))
+    return result
+
+
+def decode_right_answers(values):
+    return (decode_answer(v).strip() for v in values)
+
+
+def sum_themes(typed_themes):
+    if not typed_themes:
+        return 0
+    return sum(len(v) for v in typed_themes.values())
+
+
+def make_rounds(rounds_number):
+    for round_number in range(rounds_number - 1):
+        yield Round(name=f'Round {round_number}', type=None, themes=list())
+    yield Round(name='Final round', type='final', themes=list())
+
+
+def populate_rounds_with_preferred(rounds, themes_per_round, min_questions_per_theme, max_questions_per_theme, themes):
+    for round_ in rounds:
+        if round_.type == 'final':
+            questions_num = 1
         else:
-            round_name = f'Round {round_number}'
-            round_type = None
-            high_priority_num = min(int(round(themes_per_round / (rounds - 1))), themes_per_round)
-        print(f'Generate {round_type or "normal"} round {round_number}: {len(high_priority[round_type])}'
-              + f' high priority and {len(available[round_type])} regular themes are available...')
-        questions_nums = list(range(min_questions_per_theme, max_questions_per_theme + 1))
-        random.shuffle(questions_nums)
-        for questions_num in questions_nums:
-            high_priority_samples = sorted(v for v in high_priority[round_type] if v.questions_num == questions_num)
-            regular_samples = sorted(v for v in available[round_type] if v.questions_num == questions_num)
-            if len(high_priority_samples) + len(regular_samples) < themes_per_round:
-                raise RuntimeError("Can't get themes for round: not enough samples, got only"
-                                    + f' {len(high_priority_samples) + len(regular_samples)}/{themes_per_round} themes'
-                                    + f' for a {round_type or "normal"} round with {questions_num} question(s)')
-            if len(high_priority_samples) < high_priority_num:
-                first_selected = high_priority_samples
-            else:
-                first_selected = random.sample(population=high_priority_samples, k=high_priority_num)
-            high_priority[round_type].difference_update(first_selected)
-            second_selected = list()
-            while len(first_selected) + len(second_selected) < themes_per_round:
-                new_selected = random.sample(
-                    population=regular_samples,
-                    k=themes_per_round - len(first_selected) - len(second_selected),
-                )
-                new_selected = list(filter_by_used(themes=new_selected, available=available[round_type]))
-                second_selected.extend(new_selected)
-                total_selected_num = len(first_selected) + len(second_selected)
-                if total_selected_num < themes_per_round:
-                    print(f'Filtered out duplicate theme names, {total_selected_num}/{themes_per_round} thems are left')
-                    regular_samples = sorted(v for v in available[round_type] if v.questions_num == questions_num)
-                    has_num = len(high_priority_samples) + len(regular_samples) + len(first_selected) + len(second_selected)
-                    if has_num < themes_per_round:
-                        raise RuntimeError("Can't get themes for round: not enough samples, got only"
-                                            + f' {has_num}/{themes_per_round} themes for a'
-                                            + f' {round_type or "normal"} round with {questions_num} question(s)')
-                    continue
-            selected = sorted(first_selected + second_selected)
-            random.shuffle(selected)
-            yield Round(name=round_name, type=round_type, themes=selected)
-            break
-        if len(selected) < themes_per_round:
+            questions_num = max(
+                range(min_questions_per_theme, max_questions_per_theme + 1),
+                key=lambda v: len(themes[round_.type][v]),
+            )
+        print(f'Populate {round_.name} with preferred themes of {questions_num} questions...')
+        populate_round_with_preferred(
+            round_=round_,
+            themes_per_round=themes_per_round,
+            themes=themes[round_.type][questions_num],
+        )
+
+
+def populate_round_with_preferred(round_, themes_per_round, themes):
+    if not themes:
+        return
+    samples = random.sample(
+        population=sorted(themes),
+        k=min(len(themes), themes_per_round),
+    )
+    round_.themes.extend(samples)
+    themes.difference_update(samples)
+
+
+def populate_rounds(rounds, themes_per_round, min_questions_per_theme, max_questions_per_theme, is_used,
+                    themes, used_theme_names, used_right_answers):
+    for round_ in rounds:
+        if round_.themes:
+            questions_nums = [round_.themes[0].questions_num]
+        elif round_.type == 'final':
+            questions_nums = [1]
+        else:
+            questions_nums = list(range(min_questions_per_theme, max_questions_per_theme + 1))
+            random.shuffle(questions_nums)
+        populated = populate_round(
+            round_=round_,
+            themes_per_round=themes_per_round,
+            questions_nums=questions_nums,
+            is_used=is_used,
+            themes=themes[round_.type],
+            used_theme_names=used_theme_names,
+            used_right_answers=used_right_answers,
+        )
+        if not populated:
             raise RuntimeError("Can't get themes for round: not enough samples for a"
-                                + f' {round_type or "normal"} round with [{min_questions_per_theme},'
-                                + f' {max_questions_per_theme}] question(s)')
+                               + f' {round_.type or "normal"} round with [{min_questions_per_theme},'
+                               + f' {max_questions_per_theme}] question(s)')
 
 
-def make_filter_used_by(used_theme_names, use_unique_theme_names, used_right_answers, use_unique_right_answers):
-    def impl(themes, available):
-        for theme in themes:
-            if use_unique_theme_names and theme.theme_name.strip() in used_theme_names:
+def populate_round(round_, themes_per_round, questions_nums, is_used, themes,
+                   used_theme_names, used_right_answers):
+    need = themes_per_round - len(round_.themes)
+    if need <= 0:
+        return True
+    print(f'Populate {round_.name} round, need {need} themes...')
+    for questions_num in questions_nums:
+        print(f'Use {len(themes[questions_num])} themes with {questions_num} questions...')
+        filtered = tuple(v for v in themes[questions_num] if not is_used(v))
+        print(f'Filtered themes: {len(filtered)} themes are left')
+        if len(filtered) < need:
+            continue
+        samples = get_unique_samples(
+            number=themes_per_round,
+            is_used=is_used,
+            themes=set(themes[questions_num]),
+            used_theme_names=used_theme_names,
+            used_right_answers=used_right_answers,
+        )
+        if not samples:
+            continue
+        round_.themes.extend(samples)
+        themes[questions_num].difference_update(samples)
+        return True
+    return False
+
+
+def get_unique_samples(number, is_used, themes, used_theme_names, used_right_answers):
+    currently_used_theme_names = set()
+    currently_used_right_answers = set()
+    selected = list()
+    while len(selected) < number:
+        need = number - len(selected)
+        print(f'Need {need} sample(s)')
+        if len(themes) < need:
+            if used_theme_names is not None:
+                used_theme_names.difference_update(currently_used_theme_names)
+            if used_right_answers is not None:
+                used_right_answers.difference_update(currently_used_right_answers)
+            return
+        filtered = tuple(v for v in themes if not is_used(v))
+        print(f'Filtered themes: {len(filtered)} themes are left')
+        samples = random.sample(population=sorted(filtered), k=need)
+        for sample in samples:
+            if is_used(sample):
                 continue
-            if use_unique_right_answers and used_right_answers.intersection(theme.base64_encoded_right_answers):
-                continue
-            yield theme
-            used_theme_names.add(theme.theme_name.strip())
-            used_right_answers.update(theme.base64_encoded_right_answers)
-            available.remove(theme)
+            selected.append(sample)
+            themes.remove(sample)
+            if used_theme_names is not None:
+                used_theme_names.add(sample.theme_name.strip())
+                currently_used_theme_names.add(sample.theme_name.strip())
+            if used_right_answers is not None:
+                used_right_answers.update(decode_right_answers(sample.base64_encoded_right_answers))
+                currently_used_right_answers.update(decode_right_answers(sample.base64_encoded_right_answers))
+        themes = set(filtered)
+    return selected
+
+
+def make_filter_used_by(used_theme_names, used_right_answers):
+    def impl(theme):
+        if used_theme_names is not None and theme.theme_name.strip() in used_theme_names:
+            return True
+        if used_right_answers is not None and used_right_answers.intersection(decode_right_answers(theme.base64_encoded_right_answers)):
+            return True
+        return False
     return impl
 
 
-def filter_themes(metadata, is_proper_theme, is_high_priority):
-    available = collections.defaultdict(set)
-    high_priority = collections.defaultdict(set)
-    for v in metadata:
-        if is_proper_theme(v):
-            if is_high_priority(v):
-                high_priority[v.round_type].add(v)
+def prepare_themes(metadata, is_acceptable, is_preferred):
+    accepted = collections.defaultdict(lambda: collections.defaultdict(set))
+    preferred = collections.defaultdict(lambda: collections.defaultdict(set))
+    for value in metadata:
+        if value.round_type not in ('final', None):
+            value = theme_with_round_type(value, None)
+        if is_acceptable(value):
+            if is_preferred(value):
+                preferred[value.round_type][value.questions_num].add(value)
             else:
-                available[v.round_type].add(v)
-    return available, high_priority
+                accepted[value.round_type][value.questions_num].add(value)
+    return accepted, preferred
+
+
+def theme_with_round_type(theme, value):
+    theme_dict = theme._asdict()
+    theme_dict['round_type'] = value
+    return ThemeMetadata(**theme_dict)
 
 
 def write_package(content_xml, files, output):
@@ -269,6 +414,10 @@ def generate_content_xml(name, rounds, use_obfuscation, use_unified_price):
                 if author.text not in authors:
                     authors[author.text] = set()
                 authors[author.text].add(theme.package_name)
+    answers = collections.Counter()
+    for right in package_element.iter('right'):
+        for answer in right.iter('answer'):
+            answers[answer.text] += 1
     for author in sorted(authors.keys()):
         authors_and_roles = f'{author} ({", ".join(sorted(authors[author]))})'
         lxml.etree.SubElement(authors_element, 'author', attrib=dict()).text = authors_and_roles

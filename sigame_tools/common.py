@@ -174,7 +174,7 @@ def get_themes_metadata(path, content, file_name):
                 questions_num=get_number_of_questions(theme),
                 authors=authors,
                 base64_encoded_right_answers=tuple(get_base64_encoded_right_answers(theme)),
-                round_type=round_.attrib.get('type'),
+                round_type='final' if round_.attrib.get('type') == 'final' else None,
                 file_name=file_name,
                 images_num=get_atom_num(theme=theme, atom_type='image'),
                 videos_num=get_atom_num(theme=theme, atom_type='video'),
@@ -190,7 +190,15 @@ def get_base64_encoded_right_answers(theme):
     for right in theme.iter('right'):
         for answer in right.iter('answer'):
             if answer.text:
-                yield base64.b64encode(answer.text.encode('utf-8')).decode('utf-8')
+                yield encode_answer(answer.text)
+
+
+def encode_answer(value):
+    return base64.b64encode(value.encode('utf-8')).decode('utf-8')
+
+
+def decode_answer(value):
+    return base64.b64decode(value.encode('utf-8')).decode('utf-8')
 
 
 def get_atom_num(theme, atom_type):

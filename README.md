@@ -103,9 +103,9 @@ Possible media file names conflicts are properly handled.
 
 **Note**: this is an experimental feature, mostly designed to exclude packages that are played or not wanted to be in the game. For advanced JSON filtering use [jq](https://stedolan.github.io/jq/).
 
-Format: `--filter <include|exclude|force_include> <file_name> <pattern>`
+Format: `--filter <include|exclude|prefer> <file_name> <pattern>`
 
-By default all themes are filtered in. `include` or `force_include` will filter out all themes that does not match
+By default all themes are filtered in. `include` or `prefer` will filter out all themes that does not match
 pattern for a given `field_name`. But multiple includes create union across the same and different fields:
 
 ```bash
@@ -140,7 +140,7 @@ Excludes also create union:
 
 will filter out `physics` and `mathematics`.
 
-`force_include` works as `include` but increase priority for a theme to be added to generated package.
+`prefer` works as `include` but increase priority for a theme to be added to generated package.
 
 `pattern` can be regular expression for strings or exact value for integers. For lists pattern is used to match one of the values inside the list.
 
@@ -154,7 +154,7 @@ will filter out `physics` and `mathematics`.
     --min_questions_per_theme=7 \
     --max_questions_per_theme=10 \
     --output my_pack.siq \
-    --filter force_include file_name 'Physics' \
+    --filter prefer file_name 'Physics' \
     --filter include theme_name 'Mechanics' \
     --filter exclude theme_name 'Quantum'
 ```
