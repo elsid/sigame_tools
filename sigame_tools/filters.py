@@ -10,12 +10,7 @@ def make_preferred_filter(args, types):
 
 
 def make_filter(args, types):
-    filters = list()
-    for filter_type, field, pattern in args:
-        assert filter_type in ('include', 'exclude', 'prefer')
-        field_filter = make_typed_field_filter(field_type=types[field], pattern=pattern)
-        if field_filter:
-            filters.append((filter_type in ('include', 'prefer'), field, field_filter))
+    filters = tuple(generate_field_filters(args=args, types=types))
     if not filters:
         return lambda _: True
     def impl(value):
@@ -29,6 +24,14 @@ def make_filter(args, types):
                 excludes[field] = field_result or bool(excludes.get(field))
         return (not includes or any(includes.values())) and not (excludes and any(excludes.values()))
     return impl
+
+
+def generate_field_filters(args, types):
+    for filter_type, field, pattern in args:
+        assert filter_type in ('include', 'exclude', 'prefer')
+        field_filter = make_typed_field_filter(field_type=types[field], pattern=pattern)
+        if field_filter:
+            yield filter_type in ('include', 'prefer'), field, field_filter
 
 
 def make_typed_field_filter(field_type, pattern):
