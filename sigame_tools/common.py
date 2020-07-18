@@ -174,7 +174,7 @@ def get_themes_metadata(path, content, file_name):
                 questions_num=get_number_of_questions(theme),
                 authors=authors,
                 base64_encoded_right_answers=tuple(get_base64_encoded_right_answers(theme)),
-                round_type='final' if round_.attrib.get('type') == 'final' else None,
+                round_type=round_.attrib.get('type'),
                 file_name=file_name,
                 images_num=get_atom_num(theme=theme, atom_type='image'),
                 videos_num=get_atom_num(theme=theme, atom_type='video'),
