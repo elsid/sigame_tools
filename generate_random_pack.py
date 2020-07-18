@@ -64,16 +64,21 @@ from sigame_tools.weighted import (
                    ' assigned to a field if its values matching the pattern. Default weight'
                    ' is 1. If field value matches multiple patterns mean weight is used.')
 @click.option('--final_themes', type=int, default=None)
+@click.option('--prefer_index_path', type=click.Path(exists=True, dir_okay=False), multiple=True)
 def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
          max_questions_per_theme, random_seed, package_name, unique_theme_names,
          unique_right_answers, obfuscate, unify_price, shuffle, check_right_answers_similarity,
-         exclude_index_path, output_index, weight, final_themes, **kwargs):
+         exclude_index_path, output_index, weight, final_themes, prefer_index_path, **kwargs):
     assert rounds > 0
     assert themes_per_round > 0
     assert min_questions_per_theme > 0
     assert min_questions_per_theme <= max_questions_per_theme
     random.seed(random_seed)
-    filters = tuple(list(kwargs['filter']) + list(exclude_by_indices(exclude_index_path)))
+    filters = tuple(
+        list(kwargs['filter'])
+        + list(exclude_by_indices(exclude_index_path))
+        + list(prefer_by_indices(prefer_index_path))
+    )
     weights = tuple((v[0], v[1], float(v[2])) for v in weight)
     rounds = generate_rounds(
         metadata=read_index(index_path).themes,
@@ -103,6 +108,16 @@ def main(index_path, output, rounds, themes_per_round, min_questions_per_theme,
     )
     if output_index:
         write_index(themes=(w for v in rounds for w in v.themes), output=output_index)
+
+
+def prefer_by_indices(paths):
+    for path in paths:
+        yield from prefer_by_index(read_index(path))
+
+
+def prefer_by_index(index):
+    for theme in index.themes:
+        yield 'prefer', 'id', theme.id
 
 
 def exclude_by_indices(paths):
@@ -264,15 +279,17 @@ def populate_round_with_preferred(round_, themes_num, themes, get_weight, final_
 def populate_rounds(rounds, themes_per_round, min_questions_per_theme, max_questions_per_theme, is_used,
                     themes, used_theme_names, used_right_answers, get_weight, final_themes):
     for round_ in rounds:
-        themes_num = themes_per_round
         if round_.themes:
             questions_nums = [round_.themes[0].questions_num]
         elif round_.type == 'final':
             questions_nums = [1]
-            themes_num = final_themes
         else:
             questions_nums = list(range(min_questions_per_theme, max_questions_per_theme + 1))
             random.shuffle(questions_nums)
+        if round_.type == 'final':
+            themes_num = final_themes
+        else:
+            themes_num = themes_per_round
         populated = populate_round(
             round_=round_,
             themes_num=themes_num,
@@ -302,7 +319,7 @@ def populate_round(round_, themes_num, questions_nums, is_used, themes,
         if len(filtered) < need:
             continue
         samples = get_unique_samples(
-            number=themes_num,
+            number=need,
             is_used=is_used,
             themes=set(themes[questions_num]),
             used_theme_names=used_theme_names,
