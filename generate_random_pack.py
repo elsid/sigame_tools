@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import Levenshtein
-import base64
 import click
 import collections
 import datetime

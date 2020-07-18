@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import click
 import collections
 import datetime
@@ -97,7 +98,7 @@ def get_media_text(media_type, path):
     if media_type == 'text':
         with open(path) as stream:
             return stream.read()
-    return f'@{os.path.basename(path)}'
+    return f"@{get_encoded_file_name(path)}"
 
 
 def get_answer_path(path, question_suffix):
@@ -145,8 +146,13 @@ def write_package(content_xml, file_paths, media_type, output):
 def copy_files(dst_siq, file_paths, media_type):
     for src_path in file_paths:
         file_dir = SIQ_FILE_TYPE_DIRS[media_type]
-        dst_path = os.path.join(file_dir, urllib.parse.quote(os.path.basename(src_path)))
+        dst_path = os.path.join(file_dir, get_encoded_file_name(src_path))
         write_siq_file(siq=dst_siq, path=dst_path, data=read_binary_file(src_path))
+
+
+def get_encoded_file_name(path):
+    name, extension = os.path.basename(path).rsplit('.', 1)
+    return f"@{base64.b16encode(name.encode('utf-8')).decode('utf-8')}.{extension}"
 
 
 if __name__ == "__main__":
