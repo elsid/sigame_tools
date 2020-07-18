@@ -154,7 +154,6 @@ def generate_rounds(metadata, rounds_number, themes_per_round, min_questions_per
         min_questions_per_theme=min_questions_per_theme,
         max_questions_per_theme=max_questions_per_theme,
         themes=preferred,
-        get_weight=get_weight,
         final_themes=final_themes,
     )
     used_theme_names = get_theme_names(rounds) if use_unique_theme_names else None
@@ -242,7 +241,7 @@ def make_rounds(rounds_number):
 
 
 def populate_rounds_with_preferred(rounds, themes_per_round, min_questions_per_theme, max_questions_per_theme,
-                                   themes, get_weight, final_themes):
+                                   themes, final_themes):
     for round_ in rounds:
         if round_.type == 'final':
             questions_num = 1
@@ -258,19 +257,17 @@ def populate_rounds_with_preferred(rounds, themes_per_round, min_questions_per_t
             round_=round_,
             themes_num=themes_num,
             themes=themes[round_.type][questions_num],
-            get_weight=get_weight,
             final_themes=final_themes,
         )
 
 
-def populate_round_with_preferred(round_, themes_num, themes, get_weight, final_themes):
+def populate_round_with_preferred(round_, themes_num, themes, final_themes):
     if not themes:
         return
     population = sorted(themes)
-    samples = random.choices(
+    samples = random.sample(
         population=population,
         k=min(len(themes), themes_num),
-        weights=tuple(get_weight(v) for v in population),
     )
     round_.themes.extend(samples)
     themes.difference_update(samples)
@@ -350,12 +347,12 @@ def get_unique_samples(number, is_used, themes, used_theme_names, used_right_ans
         filtered = tuple(v for v in themes if not is_used(v))
         population = sorted(filtered)
         print(f'Filtered themes: {len(population)} themes are left')
-        samples = random.choices(
+        samples = frozenset(random.choices(
             population=population,
             k=need,
             weights=tuple(get_weight(v) for v in population),
-        )
-        for sample in samples:
+        ))
+        for sample in sorted(samples):
             if is_used(sample):
                 continue
             selected.append(sample)
