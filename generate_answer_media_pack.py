@@ -36,12 +36,14 @@ from sigame_tools.common import (
               help='File name suffix like answer.suffix.ext to be used as question.'
                    + 'Then file name like answer.ext will be used as answer.')
 @click.option('--comment', type=str)
+@click.option('--duration', type=int, default=None)
 def main(author, package_name, round_name, theme_name, output, media_path,
-         question_suffix, media_type, comment):
+         question_suffix, media_type, comment, duration):
     questions, file_paths = generate_questions(
         media_path=media_path,
         media_type=media_type,
         question_suffix=question_suffix,
+        duration=duration,
     )
     content_xml = generate_content_xml(
         authors=author,
@@ -59,7 +61,7 @@ def main(author, package_name, round_name, theme_name, output, media_path,
     )
 
 
-def generate_questions(media_path, media_type, question_suffix):
+def generate_questions(media_path, media_type, question_suffix, duration):
     answers = dict()
     file_paths = list()
     for path in glob.glob(media_path):
@@ -75,7 +77,10 @@ def generate_questions(media_path, media_type, question_suffix):
     for answer, path in sorted(answers.items()):
         question_element = lxml.etree.SubElement(questions_element, 'question', attrib=dict(price='100'))
         scenario_element = lxml.etree.SubElement(question_element, 'scenario', attrib=dict())
-        atom_question_element = lxml.etree.SubElement(scenario_element, 'atom', attrib=get_media_type_attrib(media_type))
+        atom_question_element = lxml.etree.SubElement(scenario_element, 'atom', attrib=get_media_type_attrib(
+            media_type=media_type,
+            duration=duration,
+        ))
         atom_question_element.text = get_media_text(media_type=media_type, path=path)
         answer_path = get_answer_path(path=path, question_suffix=question_suffix)
         if answer_path is not None and os.path.exists(answer_path):
@@ -88,10 +93,13 @@ def generate_questions(media_path, media_type, question_suffix):
     return questions_element, file_paths
 
 
-def get_media_type_attrib(media_type):
-    if media_type == 'text':
-        return dict()
-    return dict(type=media_type)
+def get_media_type_attrib(media_type, duration=None):
+    result = dict()
+    if media_type != 'text':
+        result['type'] = media_type
+    if duration is not None:
+        result['time'] = str(duration)
+    return result
 
 
 def get_media_text(media_type, path):
