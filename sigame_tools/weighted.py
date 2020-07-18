@@ -27,7 +27,11 @@ def make_get_weight(args, types):
 
 
 def generate_field_filters(args, types):
+    present = set()
     for field, pattern, weight in args:
+        if (field, pattern) in present:
+            continue
+        present.add((field, pattern))
         field_filter = make_typed_field_filter(field_type=types[field], pattern=pattern)
         if field_filter:
             yield field, field_filter, weight

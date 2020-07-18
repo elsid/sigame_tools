@@ -27,8 +27,12 @@ def make_filter(args, types):
 
 
 def generate_field_filters(args, types):
+    present = set()
     for filter_type, field, pattern in args:
         assert filter_type in ('include', 'exclude', 'prefer')
+        if (filter_type, field, pattern) in present:
+            continue
+        present.add((filter_type, field, pattern))
         field_filter = make_typed_field_filter(field_type=types[field], pattern=pattern)
         if field_filter:
             yield filter_type in ('include', 'prefer'), field, field_filter
